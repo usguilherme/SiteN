@@ -1015,3 +1015,101 @@ body::before {
   .result-section { padding: 18px; }
   .login-card { padding: 28px 22px; }
 }
+
+/* ─── USER STATS MODAL ──────────────────────────────────────────────────── */
+.clickable-card:hover { border-color: rgba(255,255,255,0.12); transform: translateY(-1px); transition: all 0.2s; }
+
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+.modal-overlay.open { display: block; }
+
+.modal-panel {
+  display: none; position: fixed;
+  top: 50%; left: 50%; transform: translate(-50%, -48%);
+  width: min(560px, 95vw); max-height: 85vh;
+  background: #0d1422; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px; z-index: 1001;
+  flex-direction: column; overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+  opacity: 0; transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.modal-panel.open {
+  display: flex; opacity: 1; transform: translate(-50%, -50%);
+}
+
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.modal-user-info { display: flex; align-items: center; gap: 14px; }
+.modal-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 18px; font-weight: 600; color: #fff;
+}
+.modal-username { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+.modal-total { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  transition: color 0.15s;
+}
+.modal-close:hover { color: var(--text-primary); }
+
+.modal-body { overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 24px; }
+
+.modal-section {}
+.modal-section-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.modal-loading { color: var(--text-muted); font-size: 13px; }
+.modal-empty { color: var(--text-muted); font-size: 13px; font-style: italic; }
+
+/* Day breakdown */
+.modal-day-row {
+  padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: grid; grid-template-columns: 60px 1fr; gap: 6px;
+}
+.modal-day-row:last-child { border-bottom: none; }
+.modal-day-row.today .modal-day-label { color: var(--gold); }
+.modal-day-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.today-badge { font-size: 10px; background: rgba(240,165,0,0.15); color: var(--gold); border-radius: 4px; padding: 1px 5px; }
+.modal-day-total { grid-column: 2; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+.modal-day-subjects { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 60px; }
+.modal-subject-tag { font-size: 11px; padding: 3px 8px; border-radius: 20px; font-weight: 500; }
+
+/* Subject bars */
+.modal-subject-row {
+  display: grid; grid-template-columns: 140px 1fr 70px;
+  align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.modal-subject-name { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal-subject-bar-wrap { background: rgba(255,255,255,0.05); border-radius: 4px; height: 6px; overflow: hidden; }
+.modal-subject-bar { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.modal-subject-time { font-size: 12px; color: var(--text-muted); text-align: right; }
+
+/* Recent sessions */
+.modal-session-row {
+  display: grid; grid-template-columns: 24px 1fr auto auto;
+  align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 13px;
+}
+.modal-session-row:last-child { border-bottom: none; }
+.modal-session-emoji { font-size: 15px; }
+.modal-session-subject { color: var(--text-secondary); }
+.modal-session-duration { color: var(--gold); font-weight: 600; font-size: 12px; }
+.modal-session-date { color: var(--text-muted); font-size: 11px; }
+
+@media (max-width: 600px) {
+  .modal-subject-row { grid-template-columns: 100px 1fr 55px; }
+  .modal-session-row { grid-template-columns: 20px 1fr auto; }
+  .modal-session-date { display: none; }
+}

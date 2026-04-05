@@ -12,7 +12,7 @@
 
 <!-- Status cards -->
 <div class="status-grid" id="statusGrid">
-  <div class="status-card" id="myStatusCard">
+  <div class="status-card clickable-card" id="myStatusCard" onclick="openUserStats({{ user.id }})" style="cursor:pointer">
     <div class="status-card-header">
       <div class="status-avatar" style="background: {{ user.avatar_color }}">{{ user.display_name[0].upper() }}</div>
       <div>
@@ -26,7 +26,7 @@
   </div>
 
   {% if partner %}
-  <div class="status-card" id="partnerStatusCard">
+  <div class="status-card clickable-card" id="partnerStatusCard" onclick="openUserStats({{ partner.id }})" style="cursor:pointer">
     <div class="status-card-header">
       <div class="status-avatar" style="background: {{ partner.avatar_color }}">{{ partner.display_name[0].upper() }}</div>
       <div>
@@ -45,10 +45,7 @@
 <div class="chart-card">
   <div class="chart-header">
     <h3 class="chart-title">Horas esta semana</h3>
-    <div style="display:flex;gap:16px;align-items:center">
-      <span class="chart-total" id="weekTotal">—</span>
-      <div id="chartLegend" style="display:flex;gap:12px;font-size:12px;color:#64748b"></div>
-    </div>
+    <span class="chart-total" id="weekTotal">—</span>
   </div>
   <canvas id="weekChart" height="120"></canvas>
 </div>
@@ -78,6 +75,38 @@
       <p>Nenhuma matéria ainda. <a href="{{ url_for('timer') }}">Adicione no timer!</a></p>
     </div>
   {% endif %}
+</div>
+<!-- User Stats Modal -->
+<div class="modal-overlay" id="statsModalOverlay" onclick="closeUserStats()"></div>
+<div class="modal-panel" id="statsModal">
+  <div class="modal-header">
+    <div class="modal-user-info">
+      <div class="modal-avatar" id="modalAvatar"></div>
+      <div>
+        <div class="modal-username" id="modalUsername"></div>
+        <div class="modal-total" id="modalTotal"></div>
+      </div>
+    </div>
+    <button class="modal-close" onclick="closeUserStats()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="modal-section">
+      <div class="modal-section-title">Horas esta semana</div>
+      <canvas id="modalWeekChart" height="110"></canvas>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Por dia</div>
+      <div id="modalDayBreakdown"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Matérias — últimos 30 dias</div>
+      <div id="modalSubjects"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Sessões recentes</div>
+      <div id="modalRecent"></div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -120,49 +149,29 @@ window.updateDashboardStatus = function(data) {
 
 async function loadWeeklyStats() {
   try {
-    const [resAll, resMine] = await Promise.all([
-      fetch('/api/all-weekly-stats'),
-      fetch('/api/weekly-stats')
-    ]);
-    const dataAll  = await resAll.json();
-    const dataMine = await resMine.json();
+    const res  = await fetch('/api/weekly-stats');
+    const data = await res.json();
 
-    document.getElementById('weekTotal').textContent = dataMine.total_str || '0 min';
-
-    // Build legend
-    const legend = document.getElementById('chartLegend');
-    legend.innerHTML = dataAll.datasets.map(d =>
-      `<span style="display:flex;align-items:center;gap:4px">
-        <span style="width:10px;height:10px;border-radius:50%;background:${d.color};display:inline-block"></span>
-        ${d.label}
-      </span>`
-    ).join('');
+    document.getElementById('weekTotal').textContent = data.total_str || '0 min';
 
     const ctx = document.getElementById('weekChart').getContext('2d');
     if (weekChartInstance) weekChartInstance.destroy();
-
-    const todayIdx = dataMine.today_index;
-
     weekChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: dataAll.labels,
-        datasets: dataAll.datasets.map((d, di) => ({
-          label: d.label,
-          data: d.data,
-          backgroundColor: d.data.map((_, i) => i === todayIdx ? d.color : d.color + '55'),
-          borderRadius: 5,
+        labels: data.labels,
+        datasets: [{
+          data: data.hours,
+          backgroundColor: data.hours.map((_, i) => i === data.today_index ? '#f0a500' : '#1e2d45'),
+          borderRadius: 6,
           borderSkipped: false,
-        }))
+        }]
       },
       options: {
         responsive: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}h` }
-          }
-        },
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)}h` }
+        }},
         scales: {
           x: { grid: { display: false }, ticks: { color: '#64748b' } },
           y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
@@ -171,9 +180,9 @@ async function loadWeeklyStats() {
     });
 
     // Update subject bars
-    if (dataMine.subject_stats) {
-      const max = Math.max(...Object.values(dataMine.subject_stats).map(s => s.minutes), 1);
-      Object.entries(dataMine.subject_stats).forEach(([id, s]) => {
+    if (data.subject_stats) {
+      const max = Math.max(...Object.values(data.subject_stats).map(s => s.minutes), 1);
+      Object.entries(data.subject_stats).forEach(([id, s]) => {
         const bar  = document.querySelector(`.subject-bar[data-subject-id="${id}"]`);
         const time = document.querySelector(`.subject-time[data-subject-id="${id}"]`);
         if (bar)  bar.style.width  = Math.round((s.minutes / max) * 100) + '%';
@@ -183,7 +192,122 @@ async function loadWeeklyStats() {
   } catch(e) {}
 }
 
-loadWeeklyStats();
-setInterval(loadWeeklyStats, 30000);
+// ── USER STATS MODAL ─────────────────────────────────────────────────────────
+let modalChartInstance = null;
+
+async function openUserStats(uid) {
+  document.getElementById('statsModal').classList.add('open');
+  document.getElementById('statsModalOverlay').classList.add('open');
+  document.getElementById('modalUsername').textContent = '…';
+  document.getElementById('modalTotal').textContent = '';
+  document.getElementById('modalDayBreakdown').innerHTML = '<div class="modal-loading">Carregando…</div>';
+  document.getElementById('modalSubjects').innerHTML = '';
+  document.getElementById('modalRecent').innerHTML = '';
+
+  try {
+    const res  = await fetch(`/api/user-stats/${uid}`);
+    const data = await res.json();
+
+    // Header
+    const av = document.getElementById('modalAvatar');
+    av.textContent   = data.user.display_name[0].toUpperCase();
+    av.style.background = data.user.avatar_color;
+    document.getElementById('modalUsername').textContent = data.user.display_name;
+    document.getElementById('modalTotal').textContent    = `Total esta semana: ${data.week.total_str}`;
+
+    // Chart
+    if (modalChartInstance) modalChartInstance.destroy();
+    const ctx = document.getElementById('modalWeekChart').getContext('2d');
+    modalChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.week.labels,
+        datasets: [{
+          data: data.week.hours,
+          backgroundColor: data.week.hours.map((_, i) =>
+            i === data.week.today_index ? data.user.avatar_color : data.user.avatar_color + '44'),
+          borderRadius: 5,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => {
+            const m = data.week.minutes[ctx.dataIndex];
+            return m < 60 ? `${m} min` : `${(m/60).toFixed(1)}h (${Math.round(m)} min)`;
+          }}
+        }},
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#64748b' } },
+          y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Day breakdown
+    const dayDiv = document.getElementById('modalDayBreakdown');
+    const days = data.week.labels;
+    let dayHtml = '';
+    for (let i = 0; i < 7; i++) {
+      const subs = data.week.day_subjects[String(i)];
+      const totalMin = data.week.minutes[i];
+      if (totalMin === 0) continue;
+      const isToday = i === data.week.today_index;
+      dayHtml += `<div class="modal-day-row ${isToday ? 'today' : ''}">
+        <div class="modal-day-label">${days[i]}${isToday ? ' <span class="today-badge">hoje</span>' : ''}</div>
+        <div class="modal-day-total">${totalMin < 60 ? Math.round(totalMin) + ' min' : (totalMin/60).toFixed(1) + 'h'}</div>
+        <div class="modal-day-subjects">
+          ${Object.entries(subs).map(([name, s]) =>
+            `<span class="modal-subject-tag" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">
+              ${name} · ${s.str}
+            </span>`
+          ).join('')}
+        </div>
+      </div>`;
+    }
+    dayDiv.innerHTML = dayHtml || '<div class="modal-empty">Nenhum estudo esta semana ainda.</div>';
+
+    // Subjects
+    const subjDiv = document.getElementById('modalSubjects');
+    if (data.subjects.length === 0) {
+      subjDiv.innerHTML = '<div class="modal-empty">Nenhuma sessão nos últimos 30 dias.</div>';
+    } else {
+      const maxMin = data.subjects[0].minutes;
+      subjDiv.innerHTML = data.subjects.map(s => `
+        <div class="modal-subject-row">
+          <div class="modal-subject-name">${s.name}</div>
+          <div class="modal-subject-bar-wrap">
+            <div class="modal-subject-bar" style="background:${s.color};width:${Math.round((s.minutes/maxMin)*100)}%"></div>
+          </div>
+          <div class="modal-subject-time">${s.str}</div>
+        </div>
+      `).join('');
+    }
+
+    // Recent sessions
+    const recDiv = document.getElementById('modalRecent');
+    if (data.recent.length === 0) {
+      recDiv.innerHTML = '<div class="modal-empty">Nenhuma sessão ainda.</div>';
+    } else {
+      recDiv.innerHTML = data.recent.map(s => `
+        <div class="modal-session-row">
+          <span class="modal-session-emoji">${s.emoji}</span>
+          <span class="modal-session-subject">${s.subject}</span>
+          <span class="modal-session-duration">${s.duration_str}</span>
+          <span class="modal-session-date">${s.weekday} ${s.date_str} · ${s.time_str}</span>
+        </div>
+      `).join('');
+    }
+  } catch(e) {
+    document.getElementById('modalDayBreakdown').innerHTML = '<div class="modal-empty">Erro ao carregar dados.</div>';
+  }
+}
+
+function closeUserStats() {
+  document.getElementById('statsModal').classList.remove('open');
+  document.getElementById('statsModalOverlay').classList.remove('open');
+}
+
 </script>
 {% endblock %}

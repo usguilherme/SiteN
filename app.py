@@ -268,6 +268,76 @@ def all_weekly_stats():
                                     'data': [round(m/60,2) for m in mins]})
     return jsonify(result)
 
+@app.route('/api/user-stats/<int:uid>')
+@login_required
+def user_stats(uid):
+    today = datetime.utcnow().date()
+    week_start = today - timedelta(days=today.weekday())
+    day_names = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
+
+    # Weekly hours
+    days = {(week_start + timedelta(days=i)).isoformat(): 0.0 for i in range(7)}
+    week_sessions = StudySession.query.filter(
+        StudySession.user_id == uid,
+        StudySession.start_time >= datetime.combine(week_start, datetime.min.time())
+    ).all()
+    for s in week_sessions:
+        key = s.start_time.date().isoformat()
+        if key in days: days[key] += s.duration_minutes or 0
+    mins = list(days.values())
+    total = sum(mins)
+
+    # Per day per subject (this week)
+    day_subject = {i: {} for i in range(7)}
+    for s in week_sessions:
+        idx = (s.start_time.date() - week_start).days
+        if 0 <= idx < 7:
+            name = s.subject.name
+            emoji = s.subject.emoji
+            color = s.subject.color
+            key = f"{emoji} {name}"
+            if key not in day_subject[idx]:
+                day_subject[idx][key] = {'minutes': 0, 'color': color}
+            day_subject[idx][key]['minutes'] += s.duration_minutes or 0
+
+    # Subject totals (last 30 days)
+    since = datetime.utcnow() - timedelta(days=30)
+    agg = {}
+    for s in StudySession.query.filter(StudySession.user_id == uid,
+        StudySession.start_time >= since).all():
+        name = s.subject.name
+        emoji = s.subject.emoji
+        color = s.subject.color
+        key = f"{emoji} {name}"
+        if key not in agg:
+            agg[key] = {'minutes': 0, 'color': color}
+        agg[key]['minutes'] += s.duration_minutes or 0
+    subjects_sorted = sorted(agg.items(), key=lambda x: -x[1]['minutes'])
+
+    # Recent sessions (last 10)
+    recent = StudySession.query.filter_by(user_id=uid)\
+        .order_by(StudySession.start_time.desc()).limit(10).all()
+
+    user = User.query.get(uid)
+
+    return jsonify({
+        'user': {'id': user.id, 'display_name': user.display_name, 'avatar_color': user.avatar_color},
+        'week': {
+            'labels': day_names,
+            'hours': [round(m/60, 2) for m in mins],
+            'minutes': [round(m, 1) for m in mins],
+            'total_str': fmt_duration(total),
+            'today_index': today.weekday(),
+            'day_subjects': {str(i): {k: {'minutes': round(v['minutes'],1), 'str': fmt_duration(v['minutes']), 'color': v['color']} for k,v in day_subject[i].items()} for i in range(7)},
+        },
+        'subjects': [{'name': k, 'minutes': v['minutes'], 'str': fmt_duration(v['minutes']), 'color': v['color']} for k,v in subjects_sorted],
+        'recent': [{'subject': s.subject.name, 'emoji': s.subject.emoji,
+            'date_str': s.start_time.strftime('%d/%m'), 'weekday': ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][s.start_time.weekday()],
+            'time_str': s.start_time.strftime('%H:%M'),
+            'duration_str': fmt_duration(s.duration_minutes or 0),
+            'duration_min': round(s.duration_minutes or 0, 1)} for s in recent]
+    })
+
 @app.route('/api/recent-sessions')
 @login_required
 def recent_sessions():
