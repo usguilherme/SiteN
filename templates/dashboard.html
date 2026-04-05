@@ -5,77 +5,144 @@
 <div class="page-header">
   <div>
     <h2 class="page-title">Dashboard</h2>
-    <p class="page-sub">Seu progresso semanal de estudos</p>
+    <p class="page-sub">Seu progresso de estudos</p>
   </div>
   <a href="{{ url_for('timer') }}" class="btn-primary">▶ Iniciar sessão</a>
 </div>
 
 <!-- Status cards -->
 <div class="status-grid" id="statusGrid">
-  <div class="status-card clickable-card" id="myStatusCard" onclick="openUserStats({{ user.id }})" style="cursor:pointer">
+  <div class="status-card clickable-card" id="myStatusCard" onclick="openUserStats({{ user.id }})">
     <div class="status-card-header">
       <div class="status-avatar" style="background: {{ user.avatar_color }}">{{ user.display_name[0].upper() }}</div>
-      <div>
+      <div style="flex:1">
         <div class="status-name">{{ user.display_name }}</div>
         <div class="status-label">Você</div>
       </div>
+      <div id="myStreakBadge"></div>
     </div>
     <div class="status-body" id="myStatusBody">
       <div class="status-idle">Nenhuma sessão ativa</div>
     </div>
+    <div class="status-mini-stats" id="myMiniStats"></div>
   </div>
 
   {% if partner %}
-  <div class="status-card clickable-card" id="partnerStatusCard" onclick="openUserStats({{ partner.id }})" style="cursor:pointer">
+  <div class="status-card clickable-card" id="partnerStatusCard" onclick="openUserStats({{ partner.id }})">
     <div class="status-card-header">
       <div class="status-avatar" style="background: {{ partner.avatar_color }}">{{ partner.display_name[0].upper() }}</div>
-      <div>
+      <div style="flex:1">
         <div class="status-name">{{ partner.display_name }}</div>
         <div class="status-label">Parceira</div>
       </div>
+      <div id="partnerStreakBadge"></div>
     </div>
     <div class="status-body" id="partnerStatusBody">
       <div class="status-idle">Offline</div>
     </div>
+    <div class="status-mini-stats" id="partnerMiniStats"></div>
   </div>
   {% endif %}
 </div>
 
 <!-- Weekly chart -->
-<div class="chart-card">
+<div class="chart-card" style="margin-bottom:24px">
   <div class="chart-header">
     <h3 class="chart-title">Horas esta semana</h3>
-    <span class="chart-total" id="weekTotal">—</span>
+    <div style="display:flex;gap:16px;align-items:center">
+      <span class="chart-total" id="weekTotal">—</span>
+      <div id="chartLegend" style="display:flex;gap:12px;font-size:12px;color:#64748b"></div>
+    </div>
   </div>
-  <canvas id="weekChart" height="120"></canvas>
+  <canvas id="weekChart" height="110"></canvas>
 </div>
 
-<!-- Subjects breakdown -->
-<div class="section-header">
-  <h3 class="section-title-lg">Matérias</h3>
-  <a href="{{ url_for('timer') }}" class="btn-ghost-sm">+ Adicionar</a>
-</div>
+<!-- Goals + Subjects -->
+<div class="dash-bottom-grid">
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">🎯 Metas</span>
+      <button class="btn-ghost-sm" onclick="openGoalModal()">+ Nova meta</button>
+    </div>
+    <div id="goalsList"><div class="status-idle" style="padding:8px 0;font-size:13px">Nenhuma meta definida.</div></div>
+  </div>
 
-<div class="subjects-grid" id="subjectsGrid">
-  {% if subjects %}
-    {% for s in subjects %}
-    <div class="subject-card">
-      <div class="subject-emoji">{{ s.emoji }}</div>
-      <div class="subject-info">
-        <div class="subject-name">{{ s.name }}</div>
-        <div class="subject-bar-wrap">
-          <div class="subject-bar" style="background: {{ s.color }}; width: 0%" data-subject-id="{{ s.id }}"></div>
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">📚 Matérias</span>
+      <a href="{{ url_for('timer') }}" class="btn-ghost-sm">+ Adicionar</a>
+    </div>
+    <div id="subjectsGrid">
+      {% if subjects %}
+        {% for s in subjects %}
+        <div class="subject-card">
+          <div class="subject-emoji">{{ s.emoji }}</div>
+          <div class="subject-info">
+            <div class="subject-name">{{ s.name }}</div>
+            <div class="subject-bar-wrap">
+              <div class="subject-bar" style="background: {{ s.color }}; width: 0%" data-subject-id="{{ s.id }}"></div>
+            </div>
+          </div>
+          <div class="subject-time" data-subject-id="{{ s.id }}">—</div>
         </div>
-      </div>
-      <div class="subject-time" data-subject-id="{{ s.id }}">—</div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state"><p>Nenhuma matéria ainda.</p></div>
+      {% endif %}
     </div>
-    {% endfor %}
-  {% else %}
-    <div class="empty-state">
-      <p>Nenhuma matéria ainda. <a href="{{ url_for('timer') }}">Adicione no timer!</a></p>
-    </div>
-  {% endif %}
+  </div>
 </div>
+
+<!-- Notes -->
+<div class="dash-card" style="margin-top:20px">
+  <div class="dash-card-header">
+    <span class="dash-card-title">📝 Notas rápidas</span>
+    <button class="btn-ghost-sm" onclick="toggleNoteInput()">+ Adicionar</button>
+  </div>
+  <div id="noteInputWrap" style="display:none;margin-bottom:14px">
+    <textarea id="noteInput" placeholder="O que você estudou? Insights, dúvidas, resumos..." rows="3"
+      style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);
+             border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:14px;
+             outline:none;resize:vertical;transition:border 0.2s"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn-primary" style="padding:8px 18px;font-size:13px" onclick="saveNote()">Salvar</button>
+      <button class="btn-ghost" style="padding:8px 14px;font-size:13px" onclick="toggleNoteInput()">Cancelar</button>
+    </div>
+  </div>
+  <div id="notesList"></div>
+</div>
+
+<!-- Goal Modal -->
+<div class="modal-overlay" id="goalModalOverlay" onclick="closeGoalModal()"></div>
+<div class="modal-panel" id="goalModal">
+  <div class="modal-header">
+    <div class="modal-user-info"><div style="font-size:22px">🎯</div><div class="modal-username">Nova meta</div></div>
+    <button class="modal-close" onclick="closeGoalModal()">✕</button>
+  </div>
+  <div class="modal-body" style="gap:16px">
+    <div class="modal-section">
+      <div class="modal-section-title">Matéria</div>
+      <select id="goalSubject" style="width:100%;padding:11px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none">
+        <option value="">📚 Total (todas as matérias)</option>
+        {% for s in subjects %}<option value="{{ s.id }}">{{ s.emoji }} {{ s.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Período</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="goal-period-btn active" id="periodDay" onclick="setPeriod('day')">Por dia</button>
+        <button class="goal-period-btn" id="periodWeek" onclick="setPeriod('week')">Por semana</button>
+      </div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">Meta (horas)</div>
+      <input type="number" id="goalHours" min="0.25" max="16" step="0.25" value="2"
+        style="width:100%;padding:11px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-mono);font-size:20px;outline:none;text-align:center">
+    </div>
+    <button class="btn-primary" style="width:100%;justify-content:center;padding:13px" onclick="saveGoal()">Criar meta</button>
+  </div>
+</div>
+
 <!-- User Stats Modal -->
 <div class="modal-overlay" id="statsModalOverlay" onclick="closeUserStats()"></div>
 <div class="modal-panel" id="statsModal">
@@ -90,6 +157,7 @@
     <button class="modal-close" onclick="closeUserStats()">✕</button>
   </div>
   <div class="modal-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px" id="modalTopStats"></div>
     <div class="modal-section">
       <div class="modal-section-title">Horas esta semana</div>
       <canvas id="modalWeekChart" height="110"></canvas>
@@ -113,11 +181,12 @@
 {% block scripts %}
 <script>
 let weekChartInstance = null;
+let modalChartInstance = null;
+let goalPeriod = 'day';
 
 window.updateDashboardStatus = function(data) {
   const me      = Object.values(data).find(u => u.id === CURRENT_USER_ID);
   const partner = Object.values(data).find(u => u.id !== CURRENT_USER_ID);
-
   if (me) {
     const body = document.getElementById('myStatusBody');
     if (me.studying && me.status) {
@@ -126,11 +195,8 @@ window.updateDashboardStatus = function(data) {
         <span class="status-subject-name">${me.status.subject}</span>
         <span class="status-elapsed">${me.status.elapsed_str}</span>
       </div>`;
-    } else {
-      body.innerHTML = `<div class="status-idle">Nenhuma sessão ativa</div>`;
-    }
+    } else { body.innerHTML = `<div class="status-idle">Nenhuma sessão ativa</div>`; }
   }
-
   if (partner) {
     const body = document.getElementById('partnerStatusBody');
     if (body) {
@@ -140,168 +206,169 @@ window.updateDashboardStatus = function(data) {
           <span class="status-subject-name">${partner.status.subject}</span>
           <span class="status-elapsed">${partner.status.elapsed_str}</span>
         </div>`;
-      } else {
-        body.innerHTML = `<div class="status-idle">Offline</div>`;
-      }
+      } else { body.innerHTML = `<div class="status-idle">Offline</div>`; }
     }
   }
 };
 
 async function loadWeeklyStats() {
   try {
-    const res  = await fetch('/api/weekly-stats');
-    const data = await res.json();
-
-    document.getElementById('weekTotal').textContent = data.total_str || '0 min';
-
+    const [resAll, resMine] = await Promise.all([fetch('/api/all-weekly-stats'), fetch('/api/weekly-stats')]);
+    const dataAll = await resAll.json(); const dataMine = await resMine.json();
+    document.getElementById('weekTotal').textContent = dataMine.total_str || '0 min';
+    document.getElementById('chartLegend').innerHTML = dataAll.datasets.map(d =>
+      `<span style="display:flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${d.color};display:inline-block"></span>${d.label}</span>`
+    ).join('');
     const ctx = document.getElementById('weekChart').getContext('2d');
     if (weekChartInstance) weekChartInstance.destroy();
     weekChartInstance = new Chart(ctx, {
       type: 'bar',
-      data: {
-        labels: data.labels,
-        datasets: [{
-          data: data.hours,
-          backgroundColor: data.hours.map((_, i) => i === data.today_index ? '#f0a500' : '#1e2d45'),
-          borderRadius: 6,
-          borderSkipped: false,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)}h` }
-        }},
-        scales: {
-          x: { grid: { display: false }, ticks: { color: '#64748b' } },
-          y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
-        }
-      }
+      data: { labels: dataAll.labels, datasets: dataAll.datasets.map(d => ({
+        label: d.label, data: d.data,
+        backgroundColor: d.data.map((_, i) => i === dataMine.today_index ? d.color : d.color + '44'),
+        borderRadius: 5, borderSkipped: false,
+      }))},
+      options: { responsive: true, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}h` }}},
+        scales: { x: { grid: { display: false }, ticks: { color: '#64748b' }},
+          y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v+'h' }, beginAtZero: true }}}
     });
-
-    // Update subject bars
-    if (data.subject_stats) {
-      const max = Math.max(...Object.values(data.subject_stats).map(s => s.minutes), 1);
-      Object.entries(data.subject_stats).forEach(([id, s]) => {
-        const bar  = document.querySelector(`.subject-bar[data-subject-id="${id}"]`);
+    if (dataMine.subject_stats) {
+      const max = Math.max(...Object.values(dataMine.subject_stats).map(s => s.minutes), 1);
+      Object.entries(dataMine.subject_stats).forEach(([id, s]) => {
+        const bar = document.querySelector(`.subject-bar[data-subject-id="${id}"]`);
         const time = document.querySelector(`.subject-time[data-subject-id="${id}"]`);
-        if (bar)  bar.style.width  = Math.round((s.minutes / max) * 100) + '%';
+        if (bar) bar.style.width = Math.round((s.minutes/max)*100)+'%';
         if (time) time.textContent = s.str || '—';
       });
     }
   } catch(e) {}
 }
 
-// ── USER STATS MODAL ─────────────────────────────────────────────────────────
-let modalChartInstance = null;
+async function loadMyStats() {
+  try {
+    const res = await fetch('/api/my-stats'); const data = await res.json();
+    const badge = document.getElementById('myStreakBadge');
+    if (data.streak && data.streak.current > 0)
+      badge.innerHTML = `<span class="streak-pill">🔥 ${data.streak.current}d</span>`;
+    document.getElementById('myMiniStats').innerHTML = `
+      <div class="mini-stat"><span class="mini-val">${data.today_str}</span><span class="mini-lbl">hoje</span></div>
+      <div class="mini-stat"><span class="mini-val">${data.week_str}</span><span class="mini-lbl">semana</span></div>`;
+    renderGoals(data.goals);
+  } catch(e) {}
+}
+
+function renderGoals(goals) {
+  const el = document.getElementById('goalsList');
+  if (!goals || !goals.length) { el.innerHTML = '<div class="status-idle" style="padding:8px 0;font-size:13px">Nenhuma meta ainda.</div>'; return; }
+  el.innerHTML = goals.map(g => `
+    <div class="goal-row">
+      <div class="goal-info">
+        <span style="font-size:15px">${g.subject_emoji}</span>
+        <div style="flex:1">
+          <div class="goal-label">${g.subject} · ${g.period==='day'?'por dia':'por semana'}</div>
+          <div class="goal-progress-text">${g.done_str} / ${g.target_str} <span style="color:${g.pct>=100?'#10b981':'var(--text-dim)'}">${g.pct}%${g.pct>=100?' ✓':''}</span></div>
+        </div>
+      </div>
+      <div class="goal-bar-wrap"><div class="goal-bar" style="width:${g.pct}%;background:${g.pct>=100?'#10b981':g.subject_color}"></div></div>
+      <button class="goal-delete" onclick="deleteGoal(${g.id})">✕</button>
+    </div>`).join('');
+}
+
+function openGoalModal() { document.getElementById('goalModal').classList.add('open'); document.getElementById('goalModalOverlay').classList.add('open'); }
+function closeGoalModal() { document.getElementById('goalModal').classList.remove('open'); document.getElementById('goalModalOverlay').classList.remove('open'); }
+function setPeriod(p) {
+  goalPeriod = p;
+  document.getElementById('periodDay').classList.toggle('active', p==='day');
+  document.getElementById('periodWeek').classList.toggle('active', p==='week');
+}
+async function saveGoal() {
+  const subject_id = document.getElementById('goalSubject').value || null;
+  const hours = parseFloat(document.getElementById('goalHours').value) || 2;
+  await fetch('/api/goals/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({subject_id, period:goalPeriod, minutes:hours*60})});
+  closeGoalModal(); loadMyStats(); showToast('Meta criada! 🎯');
+}
+async function deleteGoal(id) { await fetch(`/api/goals/delete/${id}`, {method:'DELETE'}); loadMyStats(); }
+
+function toggleNoteInput() {
+  const wrap = document.getElementById('noteInputWrap');
+  wrap.style.display = wrap.style.display==='none' ? 'block' : 'none';
+  if (wrap.style.display==='block') document.getElementById('noteInput').focus();
+}
+async function saveNote() {
+  const content = document.getElementById('noteInput').value.trim();
+  if (!content) return;
+  await fetch('/api/notes/add', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content})});
+  document.getElementById('noteInput').value = '';
+  document.getElementById('noteInputWrap').style.display = 'none';
+  loadNotes(); showToast('Nota salva! 📝');
+}
+async function loadNotes() {
+  try {
+    const res = await fetch('/api/notes'); const data = await res.json();
+    const el = document.getElementById('notesList');
+    if (!data.notes || !data.notes.length) { el.innerHTML='<div class="status-idle" style="font-size:13px">Nenhuma nota ainda.</div>'; return; }
+    el.innerHTML = data.notes.map(n => `<div class="note-row"><div class="note-content">${n.content}</div><div class="note-date">${n.date}</div></div>`).join('');
+  } catch(e) {}
+}
 
 async function openUserStats(uid) {
   document.getElementById('statsModal').classList.add('open');
   document.getElementById('statsModalOverlay').classList.add('open');
   document.getElementById('modalUsername').textContent = '…';
   document.getElementById('modalTotal').textContent = '';
+  document.getElementById('modalTopStats').innerHTML = '';
   document.getElementById('modalDayBreakdown').innerHTML = '<div class="modal-loading">Carregando…</div>';
   document.getElementById('modalSubjects').innerHTML = '';
   document.getElementById('modalRecent').innerHTML = '';
-
   try {
-    const res  = await fetch(`/api/user-stats/${uid}`);
-    const data = await res.json();
-
-    // Header
+    const res = await fetch(`/api/user-stats/${uid}`); const data = await res.json();
     const av = document.getElementById('modalAvatar');
-    av.textContent   = data.user.display_name[0].toUpperCase();
-    av.style.background = data.user.avatar_color;
+    av.textContent = data.user.display_name[0].toUpperCase(); av.style.background = data.user.avatar_color;
     document.getElementById('modalUsername').textContent = data.user.display_name;
-    document.getElementById('modalTotal').textContent    = `Total esta semana: ${data.week.total_str}`;
-
-    // Chart
+    document.getElementById('modalTotal').textContent = `Total esta semana: ${data.week.total_str}`;
+    document.getElementById('modalTopStats').innerHTML = `
+      <div class="modal-stat-card"><div class="modal-stat-val">🔥 ${data.streak.current}</div><div class="modal-stat-lbl">dias seguidos</div></div>
+      <div class="modal-stat-card"><div class="modal-stat-val">⚡ ${data.streak.longest}</div><div class="modal-stat-lbl">maior sequência</div></div>`;
     if (modalChartInstance) modalChartInstance.destroy();
-    const ctx = document.getElementById('modalWeekChart').getContext('2d');
-    modalChartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: data.week.labels,
-        datasets: [{
-          data: data.week.hours,
-          backgroundColor: data.week.hours.map((_, i) =>
-            i === data.week.today_index ? data.user.avatar_color : data.user.avatar_color + '44'),
-          borderRadius: 5,
-          borderSkipped: false,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => {
-            const m = data.week.minutes[ctx.dataIndex];
-            return m < 60 ? `${m} min` : `${(m/60).toFixed(1)}h (${Math.round(m)} min)`;
-          }}
-        }},
-        scales: {
-          x: { grid: { display: false }, ticks: { color: '#64748b' } },
-          y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
-        }
-      }
+    modalChartInstance = new Chart(document.getElementById('modalWeekChart').getContext('2d'), {
+      type:'bar',
+      data:{ labels:data.week.labels, datasets:[{ data:data.week.hours,
+        backgroundColor:data.week.hours.map((_,i)=>i===data.week.today_index?data.user.avatar_color:data.user.avatar_color+'44'),
+        borderRadius:5, borderSkipped:false }]},
+      options:{ responsive:true, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>{const m=data.week.minutes[ctx.dataIndex];return m<60?`${Math.round(m)} min`:`${(m/60).toFixed(1)}h`;}}}},
+        scales:{ x:{grid:{display:false},ticks:{color:'#64748b'}}, y:{grid:{color:'#1e2d45'},ticks:{color:'#64748b',callback:v=>v+'h'},beginAtZero:true}}}
     });
-
-    // Day breakdown
-    const dayDiv = document.getElementById('modalDayBreakdown');
-    const days = data.week.labels;
-    let dayHtml = '';
-    for (let i = 0; i < 7; i++) {
-      const subs = data.week.day_subjects[String(i)];
-      const totalMin = data.week.minutes[i];
-      if (totalMin === 0) continue;
-      const isToday = i === data.week.today_index;
-      dayHtml += `<div class="modal-day-row ${isToday ? 'today' : ''}">
-        <div class="modal-day-label">${days[i]}${isToday ? ' <span class="today-badge">hoje</span>' : ''}</div>
-        <div class="modal-day-total">${totalMin < 60 ? Math.round(totalMin) + ' min' : (totalMin/60).toFixed(1) + 'h'}</div>
-        <div class="modal-day-subjects">
-          ${Object.entries(subs).map(([name, s]) =>
-            `<span class="modal-subject-tag" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">
-              ${name} · ${s.str}
-            </span>`
-          ).join('')}
-        </div>
+    let dayHtml='';
+    for (let i=0;i<7;i++){
+      const subs=data.week.day_subjects[String(i)]; const m=data.week.minutes[i];
+      if(m===0)continue;
+      const isToday=i===data.week.today_index;
+      dayHtml+=`<div class="modal-day-row ${isToday?'today':''}">
+        <div class="modal-day-label">${data.week.labels[i]}${isToday?' <span class="today-badge">hoje</span>':''}</div>
+        <div class="modal-day-total">${m<60?Math.round(m)+' min':(m/60).toFixed(1)+'h'}</div>
+        <div class="modal-day-subjects">${Object.entries(subs).map(([n,s])=>`<span class="modal-subject-tag" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${n} · ${s.str}</span>`).join('')}</div>
       </div>`;
     }
-    dayDiv.innerHTML = dayHtml || '<div class="modal-empty">Nenhum estudo esta semana ainda.</div>';
-
-    // Subjects
-    const subjDiv = document.getElementById('modalSubjects');
-    if (data.subjects.length === 0) {
-      subjDiv.innerHTML = '<div class="modal-empty">Nenhuma sessão nos últimos 30 dias.</div>';
-    } else {
-      const maxMin = data.subjects[0].minutes;
-      subjDiv.innerHTML = data.subjects.map(s => `
+    document.getElementById('modalDayBreakdown').innerHTML = dayHtml || '<div class="modal-empty">Nenhum estudo esta semana.</div>';
+    if(!data.subjects.length){ document.getElementById('modalSubjects').innerHTML='<div class="modal-empty">Nenhuma sessão nos últimos 30 dias.</div>'; }
+    else {
+      const maxMin=data.subjects[0].minutes;
+      document.getElementById('modalSubjects').innerHTML=data.subjects.map(s=>`
         <div class="modal-subject-row">
           <div class="modal-subject-name">${s.name}</div>
-          <div class="modal-subject-bar-wrap">
-            <div class="modal-subject-bar" style="background:${s.color};width:${Math.round((s.minutes/maxMin)*100)}%"></div>
-          </div>
+          <div class="modal-subject-bar-wrap"><div class="modal-subject-bar" style="background:${s.color};width:${Math.round((s.minutes/maxMin)*100)}%"></div></div>
           <div class="modal-subject-time">${s.str}</div>
-        </div>
-      `).join('');
+        </div>`).join('');
     }
-
-    // Recent sessions
-    const recDiv = document.getElementById('modalRecent');
-    if (data.recent.length === 0) {
-      recDiv.innerHTML = '<div class="modal-empty">Nenhuma sessão ainda.</div>';
-    } else {
-      recDiv.innerHTML = data.recent.map(s => `
-        <div class="modal-session-row">
-          <span class="modal-session-emoji">${s.emoji}</span>
-          <span class="modal-session-subject">${s.subject}</span>
-          <span class="modal-session-duration">${s.duration_str}</span>
-          <span class="modal-session-date">${s.weekday} ${s.date_str} · ${s.time_str}</span>
-        </div>
-      `).join('');
-    }
-  } catch(e) {
-    document.getElementById('modalDayBreakdown').innerHTML = '<div class="modal-empty">Erro ao carregar dados.</div>';
-  }
+    document.getElementById('modalRecent').innerHTML = !data.recent.length ? '<div class="modal-empty">Nenhuma sessão.</div>' :
+      data.recent.map(s=>`<div class="modal-session-row">
+        <span class="modal-session-emoji">${s.emoji}</span>
+        <span class="modal-session-subject">${s.subject}</span>
+        <span class="modal-session-duration">${s.duration_str}</span>
+        <span class="modal-session-date">${s.weekday} ${s.date_str} · ${s.time_str}</span>
+      </div>`).join('');
+  } catch(e) { document.getElementById('modalDayBreakdown').innerHTML='<div class="modal-empty">Erro ao carregar.</div>'; }
 }
 
 function closeUserStats() {
@@ -309,5 +376,7 @@ function closeUserStats() {
   document.getElementById('statsModalOverlay').classList.remove('open');
 }
 
+loadWeeklyStats(); loadMyStats(); loadNotes();
+setInterval(loadWeeklyStats, 30000); setInterval(loadMyStats, 15000);
 </script>
 {% endblock %}

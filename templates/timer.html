@@ -71,6 +71,34 @@
 <div id="recentSessions" class="recent-sessions">
   <div class="loading-sessions">Carregando...</div>
 </div>
+
+<!-- Note modal (shown after stopping session) -->
+<div class="modal-overlay" id="noteModalOverlay"></div>
+<div class="modal-panel" id="noteModal" style="max-width:420px">
+  <div class="modal-header">
+    <div class="modal-user-info">
+      <div style="font-size:26px" id="noteDurationIcon">✨</div>
+      <div>
+        <div class="modal-username" id="noteDurationText"></div>
+        <div class="modal-total">Sessão encerrada</div>
+      </div>
+    </div>
+    <button class="modal-close" onclick="closeNoteModal()">✕</button>
+  </div>
+  <div class="modal-body" style="gap:14px">
+    <div class="modal-section">
+      <div class="modal-section-title">Adicionar nota (opcional)</div>
+      <textarea id="sessionNoteInput" placeholder="O que você estudou? Insights, dúvidas..." rows="4"
+        style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border);
+               border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:14px;
+               outline:none;resize:vertical"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="btn-ghost" style="padding:12px;justify-content:center" onclick="closeNoteModal()">Pular</button>
+      <button class="btn-primary" style="padding:12px;justify-content:center" onclick="saveSessionNote()">Salvar nota</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -141,8 +169,10 @@ async function startSession() {
   updateTimerDisplay();
 }
 
+let lastSessionId = null;
+
 async function stopSession() {
-  const res  = await fetch('/api/stop-session', { method: 'POST' });
+  const res  = await fetch('/api/stop-session', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
   const data = await res.json();
   if (!data.success) { showToast('Erro ao encerrar sessão'); return; }
 
@@ -150,10 +180,37 @@ async function stopSession() {
   timerInterval    = null;
   sessionStartTime = null;
   isStudying       = false;
+  lastSessionId    = data.session_id || null;
   document.getElementById('timerDisplay').textContent = '00:00:00';
   setStudyingUI(false);
-  showToast(`Sessão encerrada! ${data.duration_str} estudados ✨`);
   loadRecentSessions();
+  // Show note modal
+  document.getElementById('noteDurationText').textContent = data.duration_str + ' estudados';
+  document.getElementById('noteModal').classList.add('open');
+  document.getElementById('noteModalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('sessionNoteInput').focus(), 200);
+}
+
+function closeNoteModal() {
+  document.getElementById('noteModal').classList.remove('open');
+  document.getElementById('noteModalOverlay').classList.remove('open');
+  document.getElementById('sessionNoteInput').value = '';
+  showToast('Sessão encerrada! ✨');
+}
+
+async function saveSessionNote() {
+  const content = document.getElementById('sessionNoteInput').value.trim();
+  if (content) {
+    await fetch('/api/notes/add', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ content, session_id: lastSessionId })
+    });
+    showToast('Sessão + nota salvas! ✨');
+  } else {
+    showToast('Sessão encerrada! ✨');
+  }
+  closeNoteModal();
+  document.getElementById('sessionNoteInput').value = '';
 }
 
 async function addSubject() {
