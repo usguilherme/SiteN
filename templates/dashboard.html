@@ -45,7 +45,10 @@
 <div class="chart-card">
   <div class="chart-header">
     <h3 class="chart-title">Horas esta semana</h3>
-    <span class="chart-total" id="weekTotal">—</span>
+    <div style="display:flex;gap:16px;align-items:center">
+      <span class="chart-total" id="weekTotal">—</span>
+      <div id="chartLegend" style="display:flex;gap:12px;font-size:12px;color:#64748b"></div>
+    </div>
   </div>
   <canvas id="weekChart" height="120"></canvas>
 </div>
@@ -117,29 +120,49 @@ window.updateDashboardStatus = function(data) {
 
 async function loadWeeklyStats() {
   try {
-    const res  = await fetch('/api/weekly-stats');
-    const data = await res.json();
+    const [resAll, resMine] = await Promise.all([
+      fetch('/api/all-weekly-stats'),
+      fetch('/api/weekly-stats')
+    ]);
+    const dataAll  = await resAll.json();
+    const dataMine = await resMine.json();
 
-    document.getElementById('weekTotal').textContent = data.total_str || '0 min';
+    document.getElementById('weekTotal').textContent = dataMine.total_str || '0 min';
+
+    // Build legend
+    const legend = document.getElementById('chartLegend');
+    legend.innerHTML = dataAll.datasets.map(d =>
+      `<span style="display:flex;align-items:center;gap:4px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${d.color};display:inline-block"></span>
+        ${d.label}
+      </span>`
+    ).join('');
 
     const ctx = document.getElementById('weekChart').getContext('2d');
     if (weekChartInstance) weekChartInstance.destroy();
+
+    const todayIdx = dataMine.today_index;
+
     weekChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: data.labels,
-        datasets: [{
-          data: data.hours,
-          backgroundColor: data.hours.map((_, i) => i === data.today_index ? '#f0a500' : '#1e2d45'),
-          borderRadius: 6,
+        labels: dataAll.labels,
+        datasets: dataAll.datasets.map((d, di) => ({
+          label: d.label,
+          data: d.data,
+          backgroundColor: d.data.map((_, i) => i === todayIdx ? d.color : d.color + '55'),
+          borderRadius: 5,
           borderSkipped: false,
-        }]
+        }))
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)}h` }
-        }},
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}h` }
+          }
+        },
         scales: {
           x: { grid: { display: false }, ticks: { color: '#64748b' } },
           y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
@@ -148,9 +171,9 @@ async function loadWeeklyStats() {
     });
 
     // Update subject bars
-    if (data.subject_stats) {
-      const max = Math.max(...Object.values(data.subject_stats).map(s => s.minutes), 1);
-      Object.entries(data.subject_stats).forEach(([id, s]) => {
+    if (dataMine.subject_stats) {
+      const max = Math.max(...Object.values(dataMine.subject_stats).map(s => s.minutes), 1);
+      Object.entries(dataMine.subject_stats).forEach(([id, s]) => {
         const bar  = document.querySelector(`.subject-bar[data-subject-id="${id}"]`);
         const time = document.querySelector(`.subject-time[data-subject-id="${id}"]`);
         if (bar)  bar.style.width  = Math.round((s.minutes / max) * 100) + '%';
