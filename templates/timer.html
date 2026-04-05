@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% block title %}Timer — StudyTogether{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Timer</h2>
+    <p class="page-sub">Registre sua sessão de estudos</p>
+  </div>
+</div>
+
+<div class="timer-layout">
+  <!-- Timer principal -->
+  <div class="timer-card">
+    <div class="timer-display" id="timerDisplay">00:00:00</div>
+    <div class="timer-subject-badge" id="timerSubjectBadge" style="display:none"></div>
+
+    <div class="timer-controls" id="timerControls">
+      <!-- Subject selector (shown when not studying) -->
+      <div id="subjectSelector">
+        <div class="timer-select-label">Selecione a matéria</div>
+        <div class="subject-picker" id="subjectPicker">
+          {% if subjects %}
+            {% for s in subjects %}
+            <button class="subject-pick-btn" data-id="{{ s.id }}" data-name="{{ s.name }}" data-emoji="{{ s.emoji }}" data-color="{{ s.color }}"
+                    onclick="selectSubject({{ s.id }}, '{{ s.name }}', '{{ s.emoji }}', '{{ s.color }}')">
+              <span>{{ s.emoji }}</span>
+              <span>{{ s.name }}</span>
+            </button>
+            {% endfor %}
+          {% else %}
+            <p class="empty-state">Nenhuma matéria cadastrada ainda.</p>
+          {% endif %}
+        </div>
+        <button class="btn-primary timer-start-btn" id="startBtn" onclick="startSession()" disabled>
+          ▶ Iniciar
+        </button>
+      </div>
+
+      <!-- Stop button (shown when studying) -->
+      <div id="stopControls" style="display:none">
+        <button class="btn-stop" onclick="stopSession()">⏹ Encerrar sessão</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add subject -->
+  <div class="add-subject-card">
+    <h3 class="add-subject-title">+ Nova matéria</h3>
+    <div class="add-subject-form">
+      <input type="text" id="newSubjectName" placeholder="Nome da matéria" maxlength="50">
+      <div class="add-subject-row">
+        <div class="emoji-pick">
+          <label>Emoji</label>
+          <input type="text" id="newSubjectEmoji" value="📚" maxlength="2">
+        </div>
+        <div class="color-pick">
+          <label>Cor</label>
+          <input type="color" id="newSubjectColor" value="#3b82f6">
+        </div>
+      </div>
+      <button class="btn-primary" onclick="addSubject()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Last sessions -->
+<div class="section-header">
+  <h3 class="section-title-lg">Sessões recentes</h3>
+</div>
+<div id="recentSessions" class="recent-sessions">
+  <div class="loading-sessions">Carregando...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedSubjectId   = null;
+let timerInterval       = null;
+let sessionStartTime    = null;
+let isStudying          = false;
+
+{% if active %}
+// Restore active session from server
+selectedSubjectId = {{ active.subject_id }};
+sessionStartTime  = new Date('{{ active.start_time.isoformat() }}Z');
+isStudying = true;
+{% endif %}
+
+function selectSubject(id, name, emoji, color) {
+  selectedSubjectId = id;
+  document.querySelectorAll('.subject-pick-btn').forEach(b => b.classList.remove('selected'));
+  const btn = document.querySelector(`.subject-pick-btn[data-id="${id}"]`);
+  if (btn) btn.classList.add('selected');
+  document.getElementById('startBtn').disabled = false;
+}
+
+function updateTimerDisplay() {
+  if (!sessionStartTime) return;
+  const elapsed = Math.floor((Date.now() - sessionStartTime.getTime()) / 1000);
+  const h = Math.floor(elapsed / 3600);
+  const m = Math.floor((elapsed % 3600) / 60);
+  const s = elapsed % 60;
+  document.getElementById('timerDisplay').textContent =
+    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function setStudyingUI(studying, subjectName, subjectEmoji, subjectColor) {
+  document.getElementById('subjectSelector').style.display  = studying ? 'none' : 'block';
+  document.getElementById('stopControls').style.display     = studying ? 'block' : 'none';
+  const badge = document.getElementById('timerSubjectBadge');
+  if (studying && subjectName) {
+    badge.style.display     = 'inline-flex';
+    badge.style.background  = subjectColor + '22';
+    badge.style.color       = subjectColor;
+    badge.style.borderColor = subjectColor + '44';
+    badge.textContent       = `${subjectEmoji} ${subjectName}`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function startSession() {
+  if (!selectedSubjectId) return;
+  const btn = document.querySelector(`.subject-pick-btn[data-id="${selectedSubjectId}"]`);
+  const name  = btn?.dataset.name  || '';
+  const emoji = btn?.dataset.emoji || '📚';
+  const color = btn?.dataset.color || '#3b82f6';
+
+  const res  = await fetch('/api/start-session', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ subject_id: selectedSubjectId })
+  });
+  const data = await res.json();
+  if (!data.success) { showToast('Erro ao iniciar sessão'); return; }
+
+  sessionStartTime = new Date(data.start_time + 'Z');
+  isStudying = true;
+  setStudyingUI(true, name, emoji, color);
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+  updateTimerDisplay();
+}
+
+async function stopSession() {
+  const res  = await fetch('/api/stop-session', { method: 'POST' });
+  const data = await res.json();
+  if (!data.success) { showToast('Erro ao encerrar sessão'); return; }
+
+  clearInterval(timerInterval);
+  timerInterval    = null;
+  sessionStartTime = null;
+  isStudying       = false;
+  document.getElementById('timerDisplay').textContent = '00:00:00';
+  setStudyingUI(false);
+  showToast(`Sessão encerrada! ${data.duration_str} estudados ✨`);
+  loadRecentSessions();
+}
+
+async function addSubject() {
+  const name  = document.getElementById('newSubjectName').value.trim();
+  const emoji = document.getElementById('newSubjectEmoji').value.trim() || '📚';
+  const color = document.getElementById('newSubjectColor').value;
+  if (!name) { showToast('Informe o nome da matéria'); return; }
+
+  const res  = await fetch('/api/add-subject', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, emoji, color })
+  });
+  const data = await res.json();
+  if (!data.success) { showToast('Erro ao adicionar matéria'); return; }
+
+  document.getElementById('newSubjectName').value = '';
+  showToast(`${emoji} ${name} adicionada!`);
+
+  // Add to picker dynamically
+  const picker = document.getElementById('subjectPicker');
+  const btn = document.createElement('button');
+  btn.className = 'subject-pick-btn';
+  btn.dataset.id    = data.id;
+  btn.dataset.name  = data.name;
+  btn.dataset.emoji = data.emoji;
+  btn.dataset.color = data.color;
+  btn.onclick = () => selectSubject(data.id, data.name, data.emoji, data.color);
+  btn.innerHTML = `<span>${data.emoji}</span><span>${data.name}</span>`;
+  picker.appendChild(btn);
+}
+
+async function loadRecentSessions() {
+  try {
+    const res  = await fetch('/api/recent-sessions');
+    const data = await res.json();
+    const container = document.getElementById('recentSessions');
+    if (!data.sessions || !data.sessions.length) {
+      container.innerHTML = '<div class="empty-state">Nenhuma sessão ainda.</div>';
+      return;
+    }
+    container.innerHTML = data.sessions.map(s => `
+      <div class="session-row">
+        <span class="session-emoji">${s.emoji}</span>
+        <span class="session-subject">${s.subject}</span>
+        <span class="session-duration">${s.duration_str}</span>
+        <span class="session-date">${s.date_str}</span>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('recentSessions').innerHTML = '<div class="empty-state">Erro ao carregar sessões.</div>';
+  }
+}
+
+// Init
+if (isStudying) {
+  setStudyingUI(true, '', '📚', '#3b82f6');
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+  updateTimerDisplay();
+}
+loadRecentSessions();
+</script>
+{% endblock %}

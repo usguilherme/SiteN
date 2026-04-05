@@ -1,0 +1,371 @@
+{% extends 'base.html' %}
+{% block title %}Guia de Estudos — StudyTogether{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Guia de Estudos ✦</h2>
+    <p class="page-sub">Veja o que mais cai no ENEM e nas provas da UFCG — com IA</p>
+  </div>
+</div>
+
+{% if not api_key_set %}
+<!-- API Key Banner -->
+<div class="api-banner">
+  <div class="api-banner-icon">🔑</div>
+  <div class="api-banner-text">
+    <strong>Configure sua chave da Anthropic API</strong>
+    <span>Necessária para gerar análises com IA. Obtenha em <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></span>
+  </div>
+  <button class="btn-primary" onclick="openApiKeyModal()">Configurar</button>
+</div>
+{% endif %}
+
+<!-- Mode selector -->
+<div class="mode-selector">
+  <button class="mode-btn active" id="modeEnem" onclick="setMode('enem')">
+    <span class="mode-icon">📋</span>
+    <div class="mode-label">
+      <strong>ENEM</strong>
+      <span>Exame Nacional do Ensino Médio</span>
+    </div>
+  </button>
+  <button class="mode-btn" id="modeUfcg" onclick="setMode('ufcg')">
+    <span class="mode-icon">🖥️</span>
+    <div class="mode-label">
+      <strong>UFCG — CC</strong>
+      <span>Ciência da Computação</span>
+    </div>
+  </button>
+</div>
+
+<!-- Input area -->
+<div class="guia-input-card">
+  <div class="guia-input-row">
+    <div class="guia-field">
+      <label>Disciplina</label>
+      <div class="discipline-wrap">
+        <input type="text" id="disciplineInput" placeholder="Ex: Matemática, Física, LEDA..."
+               autocomplete="off" oninput="filterSuggestions()" onfocus="showSuggestions()" onblur="hideSuggestions()">
+        <div class="suggestions-box" id="suggestionsBox"></div>
+      </div>
+    </div>
+    <div class="guia-field">
+      <label>Assunto específico <span class="optional">(opcional)</span></label>
+      <input type="text" id="topicInput" placeholder="Ex: Funções do 2º grau, Árvores BST...">
+    </div>
+    <button class="btn-analyze" id="analyzeBtn" onclick="analyze()">
+      <span id="analyzeBtnText">Analisar</span>
+      <span id="analyzeBtnSpinner" class="spinner hidden"></span>
+    </button>
+  </div>
+
+  <!-- Quick-fill from my subjects -->
+  {% if subjects %}
+  <div class="quick-fill">
+    <span class="quick-label">Suas matérias:</span>
+    {% for s in subjects %}
+    <button class="quick-chip" style="--chip-color: {{ s.color }}" onclick="quickFill('{{ s.name }}')">
+      {{ s.emoji }} {{ s.name }}
+    </button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ENEM disciplines -->
+  <div class="discipline-hints" id="enemHints">
+    <span class="quick-label">ENEM — sugestões:</span>
+    <button class="quick-chip" style="--chip-color:#ef4444" onclick="quickFill('Língua Portuguesa')">📝 Português</button>
+    <button class="quick-chip" style="--chip-color:#3b82f6" onclick="quickFill('Matemática')">📐 Matemática</button>
+    <button class="quick-chip" style="--chip-color:#10b981" onclick="quickFill('Biologia')">🧬 Biologia</button>
+    <button class="quick-chip" style="--chip-color:#a855f7" onclick="quickFill('Química')">⚗️ Química</button>
+    <button class="quick-chip" style="--chip-color:#06b6d4" onclick="quickFill('Física')">⚡ Física</button>
+    <button class="quick-chip" style="--chip-color:#f59e0b" onclick="quickFill('História')">📜 História</button>
+    <button class="quick-chip" style="--chip-color:#8b5cf6" onclick="quickFill('Geografia')">🌍 Geografia</button>
+    <button class="quick-chip" style="--chip-color:#f43f5e" onclick="quickFill('Redação')">✍️ Redação</button>
+  </div>
+  <div class="discipline-hints hidden" id="ufcgHints">
+    <span class="quick-label">UFCG CC — sugestões:</span>
+    <button class="quick-chip" style="--chip-color:#8b5cf6" onclick="quickFill('LEDA')">🌳 LEDA</button>
+    <button class="quick-chip" style="--chip-color:#3b82f6" onclick="quickFill('Cálculo I')">∫ Cálculo I</button>
+    <button class="quick-chip" style="--chip-color:#10b981" onclick="quickFill('LP1')">☕ LP1</button>
+    <button class="quick-chip" style="--chip-color:#f59e0b" onclick="quickFill('Álgebra Linear')">🔢 Álgebra Linear</button>
+    <button class="quick-chip" style="--chip-color:#06b6d4" onclick="quickFill('Redes de Computadores')">🌐 Redes</button>
+    <button class="quick-chip" style="--chip-color:#a855f7" onclick="quickFill('Banco de Dados')">🗄️ BD</button>
+    <button class="quick-chip" style="--chip-color:#f43f5e" onclick="quickFill('Sistemas Operacionais')">⚙️ SO</button>
+    <button class="quick-chip" style="--chip-color:#ef4444" onclick="quickFill('Algoritmos e Grafos')">📊 Algoritmos</button>
+  </div>
+</div>
+
+<!-- Results area -->
+<div id="guiaResults" class="guia-results hidden"></div>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="apiKeyModal">
+  <div class="modal">
+    <h3>🔑 Configurar API Key</h3>
+    <p class="modal-desc">Sua chave fica salva localmente no servidor, nunca é enviada a terceiros.</p>
+    <div class="modal-field">
+      <label>Anthropic API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+    </div>
+    <p class="modal-hint-link">Obtenha em: <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com/settings/keys</a></p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeApiKeyModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveApiKey()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentMode = 'enem';
+const ENEM_DISCIPLINES = ['Língua Portuguesa','Literatura','Matemática','Física','Química','Biologia','História','Geografia','Filosofia','Sociologia','Inglês','Espanhol','Redação','Ciências da Natureza','Ciências Humanas'];
+const UFCG_DISCIPLINES = ['LEDA','LP1','LP2','Cálculo I','Cálculo II','Cálculo III','Álgebra Linear','FMC','Programação I','Programação II','Arquitetura de Computadores','Sistemas Operacionais','Banco de Dados','Redes de Computadores','Inteligência Artificial','Compiladores','Engenharia de Software','Teoria da Computação','Lógica para Computação','Grafos','Análise de Algoritmos','Probabilidade e Estatística'];
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeEnem').classList.toggle('active', mode === 'enem');
+  document.getElementById('modeUfcg').classList.toggle('active', mode === 'ufcg');
+  document.getElementById('enemHints').classList.toggle('hidden', mode !== 'enem');
+  document.getElementById('ufcgHints').classList.toggle('hidden', mode !== 'ufcg');
+  document.getElementById('disciplineInput').value = '';
+  document.getElementById('topicInput').value = '';
+  document.getElementById('guiaResults').classList.add('hidden');
+}
+
+function quickFill(name) {
+  document.getElementById('disciplineInput').value = name;
+  document.getElementById('topicInput').focus();
+}
+
+function filterSuggestions() {
+  const val  = document.getElementById('disciplineInput').value.toLowerCase();
+  const list = currentMode === 'enem' ? ENEM_DISCIPLINES : UFCG_DISCIPLINES;
+  const filtered = list.filter(d => d.toLowerCase().includes(val));
+  renderSuggestions(filtered);
+}
+
+function showSuggestions() {
+  const list = currentMode === 'enem' ? ENEM_DISCIPLINES : UFCG_DISCIPLINES;
+  renderSuggestions(list);
+}
+
+function hideSuggestions() {
+  setTimeout(() => {
+    const box = document.getElementById('suggestionsBox');
+    box.innerHTML = ''; box.style.display = 'none';
+  }, 200);
+}
+
+function renderSuggestions(items) {
+  const box = document.getElementById('suggestionsBox');
+  if (!items.length) { box.style.display = 'none'; return; }
+  box.innerHTML = items.slice(0,8).map(d =>
+    `<div class="suggestion-item" onmousedown="quickFill('${d}')">${d}</div>`
+  ).join('');
+  box.style.display = 'block';
+}
+
+async function analyze() {
+  const discipline = document.getElementById('disciplineInput').value.trim();
+  const topic      = document.getElementById('topicInput').value.trim();
+
+  if (!discipline) {
+    document.getElementById('disciplineInput').focus();
+    showToast('Informe a disciplina primeiro 📚');
+    return;
+  }
+
+  const btn     = document.getElementById('analyzeBtn');
+  const btnText = document.getElementById('analyzeBtnText');
+  const spinner = document.getElementById('analyzeBtnSpinner');
+  btn.disabled = true;
+  btnText.classList.add('hidden');
+  spinner.classList.remove('hidden');
+
+  try {
+    const res  = await fetch('/api/study-guide', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode: currentMode, discipline, topic })
+    });
+    const data = await res.json();
+
+    if (data.error === 'api_key_missing') { openApiKeyModal(); return; }
+    if (data.error === 'api_key_invalid') { showToast('API key inválida — verifique nas configurações'); openApiKeyModal(); return; }
+    if (data.error) { showToast('Erro: ' + data.error); return; }
+
+    renderResults(data);
+  } catch(e) {
+    showToast('Erro de conexão. Tente novamente.');
+  } finally {
+    btn.disabled = false;
+    btnText.classList.remove('hidden');
+    spinner.classList.add('hidden');
+  }
+}
+
+function renderResults(d) {
+  const modeLabel = d.mode === 'enem' ? '📋 ENEM' : '🖥️ UFCG — CC';
+  const relColor  = { alta: '#10b981', média: '#f59e0b', baixa: '#64748b' }[d.relevancia] || '#64748b';
+  const relIcon   = { alta: '🔥', média: '📌', baixa: '💤' }[d.relevancia] || '📌';
+
+  const topicosHtml = (d.topicos_mais_cobrados || []).map(t => {
+    const pesoColor = { alto: '#ef4444', médio: '#f59e0b', baixo: '#64748b' }[t.peso] || '#64748b';
+    return `<div class="topic-item">
+      <div class="topic-header">
+        <span class="topic-name">${t.topico}</span>
+        <span class="topic-peso" style="color:${pesoColor};border-color:${pesoColor}20;background:${pesoColor}12">${t.peso}</span>
+      </div>
+      <div class="topic-freq">${t.frequencia || ''}</div>
+      <div class="topic-desc">${t.descricao || ''}</div>
+    </div>`;
+  }).join('');
+
+  const roteirHtml = (d.roteiro_estudo || []).map(e => `
+    <div class="roteiro-item">
+      <div class="roteiro-num">${e.etapa}</div>
+      <div class="roteiro-body">
+        <div class="roteiro-titulo">${e.titulo}</div>
+        <div class="roteiro-acao">${e.acao}</div>
+        <div class="roteiro-tempo">⏱ ${e.tempo}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const conceitosHtml = (d.conceitos_chave || []).map(c => {
+    const impColor = c.importancia === 'alta' ? '#f0a500' : '#64748b';
+    return `<div class="conceito-item">
+      <div class="conceito-header">
+        <span class="conceito-nome">${c.conceito}</span>
+        <span class="conceito-imp" style="color:${impColor}">${c.importancia === 'alta' ? '★★' : '★'}</span>
+      </div>
+      <div class="conceito-dica">💡 ${c.memorizar || ''}</div>
+    </div>`;
+  }).join('');
+
+  const armadilhasHtml = (d.padrao_questoes?.armadilhas || []).map(a =>
+    `<li>⚠️ ${a}</li>`
+  ).join('');
+
+  const altsHtml = (d.exemplo_questao?.alternativas || []).map((a, i) => {
+    const letra = String.fromCharCode(65 + i);
+    const isGab = d.exemplo_questao?.gabarito?.toUpperCase().includes(letra);
+    return `<div class="alt-item ${isGab ? 'correct' : ''}">${a}</div>`;
+  }).join('');
+
+  const recursosHtml = (d.recursos || []).map(r => {
+    const typeIcon = { videoaula:'🎬', livro:'📗', site:'🌐', lista:'📋', exercícios:'✏️' }[r.tipo] || '📌';
+    return `<div class="recurso-item">
+      <span class="recurso-tipo">${typeIcon} ${r.tipo}</span>
+      <span class="recurso-nome">${r.nome}</span>
+      <span class="recurso-detalhe">${r.detalhe || ''}</span>
+    </div>`;
+  }).join('');
+
+  const html = `
+    <div class="result-header">
+      <div class="result-title-row">
+        <div>
+          <div class="result-breadcrumb">${modeLabel}</div>
+          <h3 class="result-title">${d.discipline}${d.topic ? ` — ${d.topic}` : ''}</h3>
+        </div>
+        <div class="result-relevancia" style="--rel-color:${relColor}">
+          <span>${relIcon}</span>
+          <div>
+            <div class="rel-label">Relevância</div>
+            <div class="rel-value">${d.relevancia}</div>
+          </div>
+        </div>
+      </div>
+      <p class="result-desc">${d.descricao_relevancia || ''}</p>
+    </div>
+
+    <div class="result-grid">
+      <!-- Tópicos mais cobrados -->
+      <div class="result-section">
+        <h4 class="section-title">🎯 Tópicos mais cobrados</h4>
+        <div class="topics-list">${topicosHtml}</div>
+      </div>
+
+      <!-- Roteiro de estudo -->
+      <div class="result-section">
+        <h4 class="section-title">🗺️ Roteiro de estudo</h4>
+        <div class="roteiro-list">${roteirHtml}</div>
+      </div>
+
+      <!-- Padrão de questões -->
+      <div class="result-section">
+        <h4 class="section-title">📝 Padrão das questões</h4>
+        <div class="padrao-card">
+          <div class="padrao-tipo"><strong>Tipo:</strong> ${d.padrao_questoes?.tipo || '—'}</div>
+          <div class="padrao-abordagem">${d.padrao_questoes?.abordagem || ''}</div>
+          <div class="padrao-armadilhas-label">Armadilhas comuns:</div>
+          <ul class="armadilhas-list">${armadilhasHtml}</ul>
+        </div>
+      </div>
+
+      <!-- Conceitos-chave -->
+      <div class="result-section">
+        <h4 class="section-title">🧠 Conceitos-chave</h4>
+        <div class="conceitos-list">${conceitosHtml}</div>
+      </div>
+    </div>
+
+    <!-- Exemplo de questão -->
+    ${d.exemplo_questao ? `
+    <div class="result-section full-width">
+      <h4 class="section-title">📖 Exemplo de questão</h4>
+      <div class="questao-card">
+        <div class="questao-enunciado">${d.exemplo_questao.enunciado}</div>
+        <div class="questao-alts">${altsHtml}</div>
+        <div class="questao-resolucao">
+          <div class="resolucao-label">Resolução:</div>
+          <div class="resolucao-text">${d.exemplo_questao.resolucao}</div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- Recursos recomendados -->
+    ${recursosHtml ? `
+    <div class="result-section full-width">
+      <h4 class="section-title">📚 Recursos recomendados</h4>
+      <div class="recursos-grid">${recursosHtml}</div>
+    </div>
+    ` : ''}
+  `;
+
+  const container = document.getElementById('guiaResults');
+  container.innerHTML = html;
+  container.classList.remove('hidden');
+  container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// API Key modal
+function openApiKeyModal()  { document.getElementById('apiKeyModal').classList.add('open'); }
+function closeApiKeyModal() { document.getElementById('apiKeyModal').classList.remove('open'); }
+async function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) return;
+  await fetch('/api/set-api-key', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ api_key: key })
+  });
+  closeApiKeyModal();
+  showToast('API key salva! ✨');
+  document.querySelector('.api-banner')?.remove();
+}
+document.getElementById('apiKeyModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeApiKeyModal();
+});
+// Enter to analyze
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (document.activeElement.id === 'disciplineInput' || document.activeElement.id === 'topicInput')) {
+    analyze();
+  }
+});
+</script>
+{% endblock %}

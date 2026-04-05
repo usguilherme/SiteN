@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — StudyTogether{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Dashboard</h2>
+    <p class="page-sub">Seu progresso semanal de estudos</p>
+  </div>
+  <a href="{{ url_for('timer') }}" class="btn-primary">▶ Iniciar sessão</a>
+</div>
+
+<!-- Status cards -->
+<div class="status-grid" id="statusGrid">
+  <div class="status-card" id="myStatusCard">
+    <div class="status-card-header">
+      <div class="status-avatar" style="background: {{ user.avatar_color }}">{{ user.display_name[0].upper() }}</div>
+      <div>
+        <div class="status-name">{{ user.display_name }}</div>
+        <div class="status-label">Você</div>
+      </div>
+    </div>
+    <div class="status-body" id="myStatusBody">
+      <div class="status-idle">Nenhuma sessão ativa</div>
+    </div>
+  </div>
+
+  {% if partner %}
+  <div class="status-card" id="partnerStatusCard">
+    <div class="status-card-header">
+      <div class="status-avatar" style="background: {{ partner.avatar_color }}">{{ partner.display_name[0].upper() }}</div>
+      <div>
+        <div class="status-name">{{ partner.display_name }}</div>
+        <div class="status-label">Parceira</div>
+      </div>
+    </div>
+    <div class="status-body" id="partnerStatusBody">
+      <div class="status-idle">Offline</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Weekly chart -->
+<div class="chart-card">
+  <div class="chart-header">
+    <h3 class="chart-title">Horas esta semana</h3>
+    <span class="chart-total" id="weekTotal">—</span>
+  </div>
+  <canvas id="weekChart" height="120"></canvas>
+</div>
+
+<!-- Subjects breakdown -->
+<div class="section-header">
+  <h3 class="section-title-lg">Matérias</h3>
+  <a href="{{ url_for('timer') }}" class="btn-ghost-sm">+ Adicionar</a>
+</div>
+
+<div class="subjects-grid" id="subjectsGrid">
+  {% if subjects %}
+    {% for s in subjects %}
+    <div class="subject-card">
+      <div class="subject-emoji">{{ s.emoji }}</div>
+      <div class="subject-info">
+        <div class="subject-name">{{ s.name }}</div>
+        <div class="subject-bar-wrap">
+          <div class="subject-bar" style="background: {{ s.color }}; width: 0%" data-subject-id="{{ s.id }}"></div>
+        </div>
+      </div>
+      <div class="subject-time" data-subject-id="{{ s.id }}">—</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+      <p>Nenhuma matéria ainda. <a href="{{ url_for('timer') }}">Adicione no timer!</a></p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let weekChartInstance = null;
+
+window.updateDashboardStatus = function(data) {
+  const me      = Object.values(data).find(u => u.id === CURRENT_USER_ID);
+  const partner = Object.values(data).find(u => u.id !== CURRENT_USER_ID);
+
+  if (me) {
+    const body = document.getElementById('myStatusBody');
+    if (me.studying && me.status) {
+      body.innerHTML = `<div class="status-studying">
+        <span class="status-subject-emoji">${me.status.subject_emoji}</span>
+        <span class="status-subject-name">${me.status.subject}</span>
+        <span class="status-elapsed">${me.status.elapsed_str}</span>
+      </div>`;
+    } else {
+      body.innerHTML = `<div class="status-idle">Nenhuma sessão ativa</div>`;
+    }
+  }
+
+  if (partner) {
+    const body = document.getElementById('partnerStatusBody');
+    if (body) {
+      if (partner.studying && partner.status) {
+        body.innerHTML = `<div class="status-studying">
+          <span class="status-subject-emoji">${partner.status.subject_emoji}</span>
+          <span class="status-subject-name">${partner.status.subject}</span>
+          <span class="status-elapsed">${partner.status.elapsed_str}</span>
+        </div>`;
+      } else {
+        body.innerHTML = `<div class="status-idle">Offline</div>`;
+      }
+    }
+  }
+};
+
+async function loadWeeklyStats() {
+  try {
+    const res  = await fetch('/api/weekly-stats');
+    const data = await res.json();
+
+    document.getElementById('weekTotal').textContent = data.total_str || '0 min';
+
+    const ctx = document.getElementById('weekChart').getContext('2d');
+    if (weekChartInstance) weekChartInstance.destroy();
+    weekChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          data: data.hours,
+          backgroundColor: data.hours.map((_, i) => i === data.today_index ? '#f0a500' : '#1e2d45'),
+          borderRadius: 6,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)}h` }
+        }},
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#64748b' } },
+          y: { grid: { color: '#1e2d45' }, ticks: { color: '#64748b', callback: v => v + 'h' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Update subject bars
+    if (data.subject_stats) {
+      const max = Math.max(...Object.values(data.subject_stats).map(s => s.minutes), 1);
+      Object.entries(data.subject_stats).forEach(([id, s]) => {
+        const bar  = document.querySelector(`.subject-bar[data-subject-id="${id}"]`);
+        const time = document.querySelector(`.subject-time[data-subject-id="${id}"]`);
+        if (bar)  bar.style.width  = Math.round((s.minutes / max) * 100) + '%';
+        if (time) time.textContent = s.str || '—';
+      });
+    }
+  } catch(e) {}
+}
+
+loadWeeklyStats();
+setInterval(loadWeeklyStats, 30000);
+</script>
+{% endblock %}

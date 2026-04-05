@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{% block title %}StudyTogether{% endblock %}</title>
+
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#080c14">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- iPhone / iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="StudyTogether">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="/static/icons/icon-512.png">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="{{ url_for('dashboard') }}" class="nav-brand">
+    <span class="brand-icon">✦</span>
+    <span class="brand-text">StudyTogether</span>
+  </a>
+
+  <div class="nav-status" id="nav-partner-status"></div>
+
+  <div class="nav-right">
+    <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('timer') }}" class="nav-link {% if request.endpoint == 'timer' %}active{% endif %}">Timer</a>
+    <a href="{{ url_for('guia') }}" class="nav-link nav-link-guia {% if request.endpoint == 'guia' %}active{% endif %}">Guia ✦</a>
+    <div class="nav-user" onclick="toggleProfileMenu()">
+      <div class="nav-avatar" style="background: {{ user.avatar_color }}">{{ user.display_name[0].upper() }}</div>
+      <span class="nav-username">{{ user.display_name }}</span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </div>
+  </div>
+</nav>
+
+<div class="profile-menu" id="profileMenu">
+  <div class="profile-menu-header">
+    <div class="profile-menu-avatar" style="background: {{ user.avatar_color }}">{{ user.display_name[0].upper() }}</div>
+    <div>
+      <div class="profile-menu-name" id="profileMenuName">{{ user.display_name }}</div>
+      <div class="profile-menu-user">@{{ user.username }}</div>
+    </div>
+  </div>
+  <div class="profile-menu-divider"></div>
+  <div class="profile-field">
+    <label>Nome de exibição</label>
+    <input type="text" id="editDisplayName" value="{{ user.display_name }}" placeholder="Seu nome">
+  </div>
+  <div class="profile-field">
+    <label>Cor do perfil</label>
+    <input type="color" id="editColor" value="{{ user.avatar_color }}">
+  </div>
+  <div class="profile-field">
+    <label>Nova senha (opcional)</label>
+    <input type="password" id="editPassword" placeholder="••••••••">
+  </div>
+  <button class="profile-save-btn" onclick="saveProfile()">Salvar alterações</button>
+  <div class="profile-menu-divider"></div>
+  <a href="{{ url_for('logout') }}" class="profile-logout">Sair da conta</a>
+</div>
+<div class="profile-overlay" id="profileOverlay" onclick="toggleProfileMenu()"></div>
+
+<main class="main-content">{% block content %}{% endblock %}</main>
+
+<script>
+const CURRENT_USER_ID = {{ user.id }};
+
+function toggleProfileMenu() {
+  const menu = document.getElementById('profileMenu');
+  const overlay = document.getElementById('profileOverlay');
+  const open = !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  overlay.classList.toggle('open', open);
+}
+
+async function saveProfile() {
+  const display_name = document.getElementById('editDisplayName').value;
+  const avatar_color = document.getElementById('editColor').value;
+  const password     = document.getElementById('editPassword').value;
+  const body = { display_name, avatar_color };
+  if (password) body.password = password;
+  const res  = await fetch('/api/update-profile', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (data.success) {
+    document.getElementById('profileMenuName').textContent = data.display_name;
+    document.querySelectorAll('.nav-username').forEach(el => el.textContent = data.display_name);
+    document.querySelectorAll('.nav-avatar').forEach(el => { el.style.background = avatar_color; el.textContent = data.display_name[0].toUpperCase(); });
+    toggleProfileMenu();
+    showToast('Perfil atualizado! ✨');
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+async function pollStatus() {
+  try {
+    const res  = await fetch('/api/status');
+    const data = await res.json();
+    updateNavStatus(data);
+    if (window.updateDashboardStatus) window.updateDashboardStatus(data);
+  } catch(e) {}
+}
+
+function updateNavStatus(data) {
+  const container = document.getElementById('nav-partner-status');
+  const partner   = Object.values(data).find(u => u.id !== CURRENT_USER_ID);
+  if (!partner) return;
+  if (partner.studying && partner.status) {
+    container.innerHTML = `<div class="nav-partner-pill studying"><span class="pulse-dot"></span><span>${partner.display_name} estudando ${partner.status.subject_emoji} ${partner.status.subject} · ${partner.status.elapsed_str}</span></div>`;
+  } else {
+    container.innerHTML = `<div class="nav-partner-pill offline"><span class="dot-offline"></span><span>${partner.display_name} offline</span></div>`;
+  }
+}
+
+pollStatus();
+setInterval(pollStatus, 5000);
+
+// ── PWA Service Worker registration ────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(reg => {
+    // Check for updates on each page load
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // New version available — notify user
+          const banner = document.createElement('div');
+          banner.className = 'update-banner';
+          banner.innerHTML = `<span>🔄 Nova versão disponível!</span><button onclick="applyUpdate()">Atualizar</button>`;
+          document.body.appendChild(banner);
+          setTimeout(() => banner.classList.add('show'), 100);
+          window._pendingSW = newWorker;
+        }
+      });
+    });
+  });
+}
+
+function applyUpdate() {
+  if (window._pendingSW) window._pendingSW.postMessage('SKIP_WAITING');
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
