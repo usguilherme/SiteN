@@ -7,7 +7,13 @@ import os, json as jsonlib
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'studytogether-secret-2024-xk9')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///study.db'
+database_url = os.environ.get('DATABASE_URL', '')
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+if not database_url:
+    db_path = os.path.join(os.path.dirname(__file__), 'study.db')
+    database_url = f'sqlite:///{db_path}'
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -267,24 +273,6 @@ def all_weekly_stats():
         result['datasets'].append({'label': u.display_name, 'color': u.avatar_color,
                                     'data': [round(m/60,2) for m in mins]})
     return jsonify(result)
-
-
-@app.route('/api/manual-session', methods=['POST'])
-@login_required
-def manual_session():
-    data = request.get_json()
-    user_id = session['user_id']
-    try:
-        start_time = datetime.fromisoformat(data['start_time'])
-        end_time   = datetime.fromisoformat(data['end_time'])
-        duration   = (end_time - start_time).total_seconds() / 60
-        if duration <= 0: return jsonify({'success': False, 'error': 'Duração inválida'})
-        s = StudySession(user_id=user_id, subject_id=data['subject_id'],
-                         start_time=start_time, end_time=end_time, duration_minutes=duration)
-        db.session.add(s); db.session.commit()
-        return jsonify({'success': True, 'duration_str': fmt_duration(duration)})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/recent-sessions')
 @login_required
