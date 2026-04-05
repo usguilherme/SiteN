@@ -7,7 +7,7 @@
 
   <!-- PWA Meta Tags -->
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#080c14">
+  <meta name="theme-color" content="#05080f">
   <meta name="mobile-web-app-capable" content="yes">
 
   <!-- iPhone / iOS PWA -->
@@ -15,8 +15,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="StudyTogether">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="512x512" href="/static/icons/icon-512.png">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -71,6 +69,11 @@
   </div>
   <button class="profile-save-btn" onclick="saveProfile()">Salvar alterações</button>
   <div class="profile-menu-divider"></div>
+  <div id="notifToggleWrap" style="margin-bottom:10px;display:none">
+    <button class="btn-ghost" style="width:100%;font-size:13px" id="notifToggleBtn" onclick="toggleNotifications()">
+      🔔 Ativar notificações
+    </button>
+  </div>
   <a href="{{ url_for('logout') }}" class="profile-logout">Sair da conta</a>
 </div>
 <div class="profile-overlay" id="profileOverlay" onclick="toggleProfileMenu()"></div>
@@ -136,15 +139,85 @@ function updateNavStatus(data) {
 pollStatus();
 setInterval(pollStatus, 5000);
 
-// ── PWA Service Worker registration ────────────────────────────────────────
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────────
+let pushSubscription = null;
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function initPush(registration) {
+  try {
+    const res = await fetch('/api/push/vapid-public-key');
+    const { key } = await res.json();
+    if (!key) return; // VAPID não configurado ainda
+
+    document.getElementById('notifToggleWrap').style.display = 'block';
+
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      pushSubscription = existing;
+      updateNotifBtn(true);
+      return;
+    }
+    updateNotifBtn(false);
+  } catch(e) {}
+}
+
+function updateNotifBtn(active) {
+  const btn = document.getElementById('notifToggleBtn');
+  if (!btn) return;
+  btn.textContent = active ? '🔕 Desativar notificações' : '🔔 Ativar notificações';
+}
+
+async function toggleNotifications() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+
+    if (existing) {
+      await existing.unsubscribe();
+      await fetch('/api/push/unsubscribe', { method: 'POST' });
+      pushSubscription = null;
+      updateNotifBtn(false);
+      showToast('Notificações desativadas');
+      return;
+    }
+
+    const res = await fetch('/api/push/vapid-public-key');
+    const { key } = await res.json();
+    if (!key) { showToast('Notificações não configuradas ainda'); return; }
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(key)
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON())
+    });
+    pushSubscription = sub;
+    updateNotifBtn(true);
+    showToast('Notificações ativadas! 🔔');
+  } catch(e) {
+    showToast('Não foi possível ativar notificações');
+  }
+}
+
+// ── PWA Service Worker ────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(reg => {
-    // Check for updates on each page load
+    // Init push após SW registrado
+    if ('PushManager' in window) initPush(reg);
+
     reg.addEventListener('updatefound', () => {
       const newWorker = reg.installing;
       newWorker.addEventListener('statechange', () => {
         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          // New version available — notify user
           const banner = document.createElement('div');
           banner.className = 'update-banner';
           banner.innerHTML = `<span>🔄 Nova versão disponível!</span><button onclick="applyUpdate()">Atualizar</button>`;

@@ -1,17 +1,16 @@
-// StudyTogether Service Worker
-// Estratégia: Network-first para tudo → sempre atualizado
-// Static assets: stale-while-revalidate (carrega rápido, atualiza em background)
+// StudyTogether Service Worker v3
+// Push notifications + Network-first + Stale-while-revalidate
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME    = `studytogether-${CACHE_VERSION}`;
 
 const STATIC_CACHE = [
   '/static/css/style.css',
 ];
 
-// ── INSTALL: cache assets estáticos ──────────────────────────────────────────
+// ── INSTALL ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
-  self.skipWaiting(); // Ativa o novo SW imediatamente, sem esperar abas fecharem
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       cache.addAll(STATIC_CACHE).catch(() => {})
@@ -19,48 +18,27 @@ self.addEventListener('install', event => {
   );
 });
 
-// ── ACTIVATE: limpa caches antigos e assume controle ─────────────────────────
+// ── ACTIVATE ──────────────────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     Promise.all([
-      // Limpar versões antigas do cache
       caches.keys().then(keys =>
         Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
       ),
-      // Tomar controle de todas as abas abertas imediatamente
       clients.claim()
     ])
   );
 });
 
-// ── FETCH: interceptar requisições ───────────────────────────────────────────
+// ── FETCH ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignorar requisições não-HTTP e de outros domínios (ex: Google Fonts)
   if (!url.protocol.startsWith('http') || url.origin !== location.origin) return;
-
-  // API calls → SEMPRE da rede (nunca cachear dados dinâmicos)
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(request));
-    return;
-  }
-
-  // Service worker e manifest → SEMPRE da rede
-  if (url.pathname === '/sw.js' || url.pathname === '/manifest.json') {
-    event.respondWith(fetch(request));
-    return;
-  }
-
-  // CSS/JS estáticos → Stale-while-revalidate (rápido + sempre atualiza)
-  if (request.destination === 'style' || request.destination === 'script') {
-    event.respondWith(staleWhileRevalidate(request));
-    return;
-  }
-
-  // Páginas HTML → Network-first (sempre a versão mais recente)
-  // Se offline, cai para o cache
+  if (url.pathname.startsWith('/api/')) { event.respondWith(fetch(request)); return; }
+  if (url.pathname === '/sw.js' || url.pathname === '/manifest.json') { event.respondWith(fetch(request)); return; }
+  if (request.destination === 'style' || request.destination === 'script') { event.respondWith(staleWhileRevalidate(request)); return; }
   event.respondWith(networkFirst(request));
 });
 
@@ -74,9 +52,8 @@ async function networkFirst(request) {
     return response;
   } catch {
     const cached = await caches.match(request);
-    return cached || new Response('Offline — abra o app conectado ao Wi-Fi primeiro.', {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    return cached || new Response('Offline — abra o app conectado primeiro.', {
+      status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' }
     });
   }
 }
@@ -91,7 +68,38 @@ async function staleWhileRevalidate(request) {
   return cached || fetchPromise;
 }
 
-// ── MENSAGENS: forçar atualização ─────────────────────────────────────────────
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────────
+self.addEventListener('push', event => {
+  if (!event.data) return;
+  const data = event.data.json();
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/static/icons/icon-192.png',
+      badge: '/static/icons/icon-192.png',
+      tag: 'partner-status',
+      renotify: true,
+      data: { url: '/dashboard' }
+    })
+  );
+});
+
+// Ao clicar na notificação, abre o app
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) return clients.openWindow('/dashboard');
+    })
+  );
+});
+
+// ── MENSAGENS ─────────────────────────────────────────────────────────────────
 self.addEventListener('message', event => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });

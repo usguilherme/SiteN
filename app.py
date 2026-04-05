@@ -47,6 +47,12 @@ class ActiveSession(db.Model):
     subject    = db.relationship('Subject')
     user       = db.relationship('User')
 
+class PushSubscription(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    subscription = db.Column(db.Text, nullable=False)
+    user         = db.relationship('User')
+
 # ─── HELPERS ────────────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -82,6 +88,34 @@ def get_api_key():
     key = os.environ.get('ANTHROPIC_API_KEY', '')
     if key: return key
     return load_config().get('api_key', '')
+
+def send_push_to_user(user_id, title, body):
+    """Envia push notification para todas as subscriptions de um usuário."""
+    try:
+        from pywebpush import webpush, WebPushException
+        cfg = load_config()
+        vapid_private = os.environ.get('VAPID_PRIVATE_KEY', cfg.get('vapid_private', ''))
+        vapid_email   = os.environ.get('VAPID_EMAIL', cfg.get('vapid_email', 'mailto:admin@studytogether.app'))
+        if not vapid_private: return
+
+        subs = PushSubscription.query.filter_by(user_id=user_id).all()
+        data = jsonlib.dumps({'title': title, 'body': body})
+        for sub in subs:
+            try:
+                sub_info = jsonlib.loads(sub.subscription)
+                webpush(
+                    subscription_info=sub_info,
+                    data=data,
+                    vapid_private_key=vapid_private,
+                    vapid_claims={'sub': vapid_email}
+                )
+            except WebPushException as e:
+                # Subscription expirada — remove
+                if e.response and e.response.status_code in [404, 410]:
+                    db.session.delete(sub)
+                    db.session.commit()
+    except Exception:
+        pass  # Push é opcional — não quebra o app se falhar
 
 # ─── PAGE ROUTES ─────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET', 'POST'])
@@ -144,6 +178,18 @@ def start_session():
     ActiveSession.query.filter_by(user_id=user_id).delete()
     active = ActiveSession(user_id=user_id, subject_id=data['subject_id'], start_time=datetime.utcnow())
     db.session.add(active); db.session.commit()
+
+    # Notifica o parceiro
+    user    = User.query.get(user_id)
+    subject = Subject.query.get(data['subject_id'])
+    partner = User.query.filter(User.id != user_id).first()
+    if partner:
+        send_push_to_user(
+            partner.id,
+            f"{subject.emoji} {user.display_name} começou a estudar!",
+            f"Estudando {subject.name} agora. Bora junto? 📚"
+        )
+
     return jsonify({'success': True, 'start_time': active.start_time.isoformat()})
 
 @app.route('/api/stop-session', methods=['POST'])
@@ -157,6 +203,17 @@ def stop_session():
     s = StudySession(user_id=user_id, subject_id=active.subject_id,
                      start_time=active.start_time, end_time=end_time, duration_minutes=duration)
     db.session.add(s); db.session.delete(active); db.session.commit()
+
+    # Notifica o parceiro
+    user    = User.query.get(user_id)
+    partner = User.query.filter(User.id != user_id).first()
+    if partner:
+        send_push_to_user(
+            partner.id,
+            f"⏹ {user.display_name} encerrou a sessão",
+            f"Estudou por {fmt_duration(duration)}. Ótimo trabalho! ✨"
+        )
+
     return jsonify({'success': True, 'duration_minutes': duration, 'duration_str': fmt_duration(duration)})
 
 @app.route('/api/weekly-stats')
@@ -170,8 +227,18 @@ def weekly_stats():
         key = s.start_time.date().isoformat()
         if key in days: days[key] += s.duration_minutes or 0
     mins = list(days.values()); total = sum(mins)
+    today_idx = today.weekday()
+    # subject stats
+    since = datetime.utcnow() - timedelta(days=30); agg = {}
+    for s in StudySession.query.filter(StudySession.user_id == user_id,
+        StudySession.start_time >= since).all():
+        sid = str(s.subject_id)
+        if sid not in agg: agg[sid] = {'minutes': 0, 'str': ''}
+        agg[sid]['minutes'] += s.duration_minutes or 0
+    for sid in agg: agg[sid]['str'] = fmt_duration(agg[sid]['minutes'])
     return jsonify({'labels': day_names, 'hours': [round(m/60,2) for m in mins],
-                    'total_minutes': total, 'total_str': fmt_duration(total)})
+                    'total_minutes': total, 'total_str': fmt_duration(total),
+                    'today_index': today_idx, 'subject_stats': agg})
 
 @app.route('/api/subject-stats')
 @login_required
@@ -206,9 +273,9 @@ def all_weekly_stats():
 def recent_sessions():
     sessions = (StudySession.query.filter_by(user_id=session['user_id'])
                 .order_by(StudySession.start_time.desc()).limit(8).all())
-    return jsonify([{'subject': s.subject.name, 'subject_color': s.subject.color,
-        'subject_emoji': s.subject.emoji, 'date': s.start_time.strftime('%d/%m %H:%M'),
-        'duration': fmt_duration(s.duration_minutes or 0)} for s in sessions])
+    return jsonify({'sessions': [{'subject': s.subject.name, 'emoji': s.subject.emoji,
+        'date_str': s.start_time.strftime('%d/%m %H:%M'),
+        'duration_str': fmt_duration(s.duration_minutes or 0)} for s in sessions]})
 
 @app.route('/api/add-subject', methods=['POST'])
 @login_required
@@ -236,6 +303,49 @@ def set_api_key():
     cfg = load_config(); cfg['api_key'] = key; save_config(cfg)
     return jsonify({'success': True})
 
+# ─── PUSH NOTIFICATION API ────────────────────────────────────────────────────
+@app.route('/api/push/vapid-public-key')
+@login_required
+def vapid_public_key():
+    cfg = load_config()
+    key = os.environ.get('VAPID_PUBLIC_KEY', cfg.get('vapid_public', ''))
+    return jsonify({'key': key})
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@login_required
+def push_subscribe():
+    user_id = session['user_id']
+    data = request.get_json()
+    sub_json = jsonlib.dumps(data)
+    # Atualiza se já existe, cria se não
+    existing = PushSubscription.query.filter_by(user_id=user_id).first()
+    if existing:
+        existing.subscription = sub_json
+    else:
+        db.session.add(PushSubscription(user_id=user_id, subscription=sub_json))
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@login_required
+def push_unsubscribe():
+    user_id = session['user_id']
+    PushSubscription.query.filter_by(user_id=user_id).delete()
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/push/set-vapid', methods=['POST'])
+@login_required
+def set_vapid():
+    data = request.get_json()
+    cfg = load_config()
+    cfg['vapid_public']  = data.get('public_key', '')
+    cfg['vapid_private'] = data.get('private_key', '')
+    cfg['vapid_email']   = data.get('email', 'mailto:admin@studytogether.app')
+    save_config(cfg)
+    return jsonify({'success': True})
+
+# ─── STUDY GUIDE API ──────────────────────────────────────────────────────────
 @app.route('/api/study-guide', methods=['POST'])
 @login_required
 def study_guide():
@@ -251,10 +361,10 @@ def study_guide():
 
     if mode == 'enem':
         context = "ENEM (Exame Nacional do Ensino Médio)"
-        extra = "Baseie-se na Matriz de Referência do ENEM, nas provas de 2010-2024. Seja preciso sobre frequência real de cobrança."
+        extra = "Baseie-se na Matriz de Referência do ENEM, nas provas de 2010-2024."
     else:
         context = "UFCG (Universidade Federal de Campina Grande) — Bacharelado em Ciência da Computação"
-        extra = "Considere o estilo das provas de CC da UFCG: teóricas com demonstrações, implementações de algoritmos, análise de complexidade, e questões práticas. Seja realista sobre o que realmente é cobrado."
+        extra = "Considere o estilo das provas de CC da UFCG."
 
     topic_part = f"Tópico específico: {topic}" if topic else "Tópico: Conteúdo geral completo da disciplina"
 
@@ -269,33 +379,33 @@ Retorne SOMENTE um JSON válido, sem nenhum texto fora do JSON:
 
 {{
   "relevancia": "alta|média|baixa",
-  "descricao_relevancia": "2-3 frases objetivas explicando a relevância neste exame",
+  "descricao_relevancia": "2-3 frases objetivas",
   "topicos_mais_cobrados": [
-    {{"topico": "Nome", "peso": "alto|médio|baixo", "frequencia": "Ex: cai em ~70% das provas", "descricao": "O que exatamente é testado"}}
+    {{"topico": "Nome", "peso": "alto|médio|baixo", "frequencia": "Ex: cai em ~70% das provas", "descricao": "O que é testado"}}
   ],
   "padrao_questoes": {{
     "tipo": "múltipla escolha|dissertativa|misto|implementação",
-    "abordagem": "Como as questões são formuladas (2-3 frases concretas e específicas)",
-    "armadilhas": ["Armadilha específica 1", "Armadilha específica 2", "Armadilha específica 3"]
+    "abordagem": "Como as questões são formuladas",
+    "armadilhas": ["Armadilha 1", "Armadilha 2", "Armadilha 3"]
   }},
   "roteiro_estudo": [
-    {{"etapa": 1, "titulo": "Título da etapa", "acao": "O que fazer concretamente", "tempo": "X horas"}}
+    {{"etapa": 1, "titulo": "Título", "acao": "O que fazer", "tempo": "X horas"}}
   ],
   "conceitos_chave": [
-    {{"conceito": "Nome exato", "importancia": "alta|média", "memorizar": "Frase-chave ou regra rápida para fixar"}}
+    {{"conceito": "Nome", "importancia": "alta|média", "memorizar": "Frase-chave"}}
   ],
   "exemplo_questao": {{
-    "enunciado": "Enunciado completo e realista de uma questão desse tipo",
+    "enunciado": "Enunciado completo",
     "alternativas": ["(A) texto", "(B) texto", "(C) texto", "(D) texto", "(E) texto"],
     "gabarito": "letra correta",
-    "resolucao": "Resolução passo a passo didática"
+    "resolucao": "Resolução passo a passo"
   }},
   "recursos": [
-    {{"tipo": "videoaula|livro|site|lista", "nome": "Nome real do recurso", "detalhe": "Por que é o melhor para esse conteúdo"}}
+    {{"tipo": "videoaula|livro|site|lista", "nome": "Nome", "detalhe": "Por que é o melhor"}}
   ]
 }}
 
-Máximo: 5 tópicos cobrados, 5 conceitos, 4 etapas, 3 recursos. Seja cirúrgico e preciso."""
+Máximo: 5 tópicos, 5 conceitos, 4 etapas, 3 recursos."""
 
     try:
         client = ant.Anthropic(api_key=api_key)
@@ -388,4 +498,5 @@ def init_db():
 
 if __name__ == '__main__':
     with app.app_context(): init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
