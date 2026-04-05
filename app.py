@@ -47,24 +47,6 @@ class ActiveSession(db.Model):
     subject    = db.relationship('Subject')
     user       = db.relationship('User')
 
-
-class StudyGoal(db.Model):
-    id         = db.Column(db.Integer, primary_key=True)
-    user_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=True)
-    period     = db.Column(db.String(10), default='week')  # 'day' or 'week'
-    minutes    = db.Column(db.Float, default=60)
-    user       = db.relationship('User')
-    subject    = db.relationship('Subject')
-
-class StudyNote(db.Model):
-    id         = db.Column(db.Integer, primary_key=True)
-    user_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    session_id = db.Column(db.Integer, db.ForeignKey('study_session.id'), nullable=True)
-    content    = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user       = db.relationship('User')
-
 class PushSubscription(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -85,64 +67,6 @@ def fmt_duration(minutes):
     if minutes < 60: return f"{int(minutes)} min"
     h = int(minutes // 60); m = int(minutes % 60)
     return f"{h}h {m:02d}min" if m else f"{h}h"
-
-
-def get_streak(user_id):
-    """Returns current and longest study streak in days."""
-    sessions = StudySession.query.filter_by(user_id=user_id).order_by(StudySession.start_time.desc()).all()
-    if not sessions: return {'current': 0, 'longest': 0}
-    study_days = sorted(set(s.start_time.date() for s in sessions), reverse=True)
-    today = datetime.utcnow().date()
-    yesterday = today - timedelta(days=1)
-    # Current streak
-    current = 0
-    check = today
-    for d in study_days:
-        if d == check or d == check - timedelta(days=0):
-            if d == check:
-                current += 1
-                check = d - timedelta(days=1)
-            else:
-                break
-        elif d == yesterday and current == 0:
-            current += 1
-            check = d - timedelta(days=1)
-        else:
-            break
-    # Longest streak
-    longest = 1; run = 1
-    for i in range(1, len(study_days)):
-        if (study_days[i-1] - study_days[i]).days == 1:
-            run += 1
-            if run > longest: longest = run
-        else:
-            run = 1
-    return {'current': current, 'longest': max(longest, current)}
-
-def get_goals_progress(user_id):
-    goals = StudyGoal.query.filter_by(user_id=user_id).all()
-    today = datetime.utcnow().date()
-    week_start = today - timedelta(days=today.weekday())
-    result = []
-    for g in goals:
-        if g.period == 'day':
-            since = datetime.combine(today, datetime.min.time())
-        else:
-            since = datetime.combine(week_start, datetime.min.time())
-        q = StudySession.query.filter(StudySession.user_id == user_id, StudySession.start_time >= since)
-        if g.subject_id:
-            q = q.filter(StudySession.subject_id == g.subject_id)
-        done = sum(s.duration_minutes or 0 for s in q.all())
-        pct = min(100, round((done / g.minutes) * 100)) if g.minutes > 0 else 0
-        result.append({
-            'id': g.id, 'period': g.period, 'target_min': g.minutes,
-            'done_min': done, 'pct': pct,
-            'target_str': fmt_duration(g.minutes), 'done_str': fmt_duration(done),
-            'subject': g.subject.name if g.subject else 'Total',
-            'subject_emoji': g.subject.emoji if g.subject else '📚',
-            'subject_color': g.subject.color if g.subject else '#c9a84c',
-        })
-    return result
 
 def get_active_status(user_id):
     active = ActiveSession.query.filter_by(user_id=user_id).first()
@@ -290,12 +214,7 @@ def stop_session():
             f"Estudou por {fmt_duration(duration)}. Ótimo trabalho! ✨"
         )
 
-    note_content = request.get_json(force=True, silent=True) or {}
-    note_text = note_content.get('note', '').strip() if isinstance(note_content, dict) else ''
-    if note_text:
-        note = StudyNote(user_id=user_id, session_id=s.id, content=note_text)
-        db.session.add(note); db.session.commit()
-    return jsonify({'success': True, 'duration_minutes': duration, 'duration_str': fmt_duration(duration), 'session_id': s.id})
+    return jsonify({'success': True, 'duration_minutes': duration, 'duration_str': fmt_duration(duration)})
 
 @app.route('/api/weekly-stats')
 @login_required
@@ -348,6 +267,24 @@ def all_weekly_stats():
         result['datasets'].append({'label': u.display_name, 'color': u.avatar_color,
                                     'data': [round(m/60,2) for m in mins]})
     return jsonify(result)
+
+
+@app.route('/api/manual-session', methods=['POST'])
+@login_required
+def manual_session():
+    data = request.get_json()
+    user_id = session['user_id']
+    try:
+        start_time = datetime.fromisoformat(data['start_time'])
+        end_time   = datetime.fromisoformat(data['end_time'])
+        duration   = (end_time - start_time).total_seconds() / 60
+        if duration <= 0: return jsonify({'success': False, 'error': 'Duração inválida'})
+        s = StudySession(user_id=user_id, subject_id=data['subject_id'],
+                         start_time=start_time, end_time=end_time, duration_minutes=duration)
+        db.session.add(s); db.session.commit()
+        return jsonify({'success': True, 'duration_str': fmt_duration(duration)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/recent-sessions')
 @login_required
@@ -507,121 +444,6 @@ Máximo: 5 tópicos, 5 conceitos, 4 etapas, 3 recursos."""
         if any(x in err.lower() for x in ['api_key','authentication','unauthorized','invalid_api']):
             return jsonify({'error': 'api_key_invalid'}), 401
         return jsonify({'error': f'Erro: {err}'}), 500
-
-
-@app.route('/api/my-stats')
-@login_required
-def my_stats():
-    user_id = session['user_id']
-    today = datetime.utcnow().date()
-    week_start = today - timedelta(days=today.weekday())
-    # Today minutes
-    today_min = sum(s.duration_minutes or 0 for s in StudySession.query.filter(
-        StudySession.user_id == user_id,
-        StudySession.start_time >= datetime.combine(today, datetime.min.time())
-    ).all())
-    # Week minutes
-    week_min = sum(s.duration_minutes or 0 for s in StudySession.query.filter(
-        StudySession.user_id == user_id,
-        StudySession.start_time >= datetime.combine(week_start, datetime.min.time())
-    ).all())
-    streak = get_streak(user_id)
-    goals = get_goals_progress(user_id)
-    return jsonify({
-        'today_str': fmt_duration(today_min), 'today_min': today_min,
-        'week_str': fmt_duration(week_min), 'week_min': week_min,
-        'streak': streak, 'goals': goals
-    })
-
-@app.route('/api/goals', methods=['GET'])
-@login_required
-def get_goals():
-    return jsonify({'goals': get_goals_progress(session['user_id'])})
-
-@app.route('/api/goals/add', methods=['POST'])
-@login_required
-def add_goal():
-    data = request.get_json()
-    g = StudyGoal(user_id=session['user_id'],
-                  subject_id=data.get('subject_id') or None,
-                  period=data.get('period', 'week'),
-                  minutes=float(data.get('minutes', 60)))
-    db.session.add(g); db.session.commit()
-    return jsonify({'success': True, 'id': g.id})
-
-@app.route('/api/goals/delete/<int:gid>', methods=['DELETE'])
-@login_required
-def delete_goal(gid):
-    g = StudyGoal.query.filter_by(id=gid, user_id=session['user_id']).first()
-    if g: db.session.delete(g); db.session.commit()
-    return jsonify({'success': True})
-
-@app.route('/api/notes/add', methods=['POST'])
-@login_required
-def add_note():
-    data = request.get_json()
-    n = StudyNote(user_id=session['user_id'],
-                  session_id=data.get('session_id'),
-                  content=data.get('content', '').strip())
-    if not n.content: return jsonify({'success': False})
-    db.session.add(n); db.session.commit()
-    return jsonify({'success': True, 'id': n.id})
-
-@app.route('/api/notes', methods=['GET'])
-@login_required
-def get_notes():
-    notes = StudyNote.query.filter_by(user_id=session['user_id'])        .order_by(StudyNote.created_at.desc()).limit(20).all()
-    return jsonify({'notes': [{'id': n.id, 'content': n.content,
-        'date': n.created_at.strftime('%d/%m %H:%M')} for n in notes]})
-
-@app.route('/api/user-stats/<int:uid>')
-@login_required
-def user_stats(uid):
-    today = datetime.utcnow().date()
-    week_start = today - timedelta(days=today.weekday())
-    day_names = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
-    days = {(week_start + timedelta(days=i)).isoformat(): 0.0 for i in range(7)}
-    week_sessions = StudySession.query.filter(
-        StudySession.user_id == uid,
-        StudySession.start_time >= datetime.combine(week_start, datetime.min.time())
-    ).all()
-    for s in week_sessions:
-        key = s.start_time.date().isoformat()
-        if key in days: days[key] += s.duration_minutes or 0
-    mins = list(days.values()); total = sum(mins)
-    day_subject = {i: {} for i in range(7)}
-    for s in week_sessions:
-        idx = (s.start_time.date() - week_start).days
-        if 0 <= idx < 7:
-            key = f"{s.subject.emoji} {s.subject.name}"
-            if key not in day_subject[idx]:
-                day_subject[idx][key] = {'minutes': 0, 'color': s.subject.color}
-            day_subject[idx][key]['minutes'] += s.duration_minutes or 0
-    since = datetime.utcnow() - timedelta(days=30); agg = {}
-    for s in StudySession.query.filter(StudySession.user_id == uid, StudySession.start_time >= since).all():
-        key = f"{s.subject.emoji} {s.subject.name}"
-        if key not in agg: agg[key] = {'minutes': 0, 'color': s.subject.color}
-        agg[key]['minutes'] += s.duration_minutes or 0
-    subjects_sorted = sorted(agg.items(), key=lambda x: -x[1]['minutes'])
-    recent = StudySession.query.filter_by(user_id=uid).order_by(StudySession.start_time.desc()).limit(10).all()
-    user = User.query.get(uid)
-    streak = get_streak(uid)
-    return jsonify({
-        'user': {'id': user.id, 'display_name': user.display_name, 'avatar_color': user.avatar_color},
-        'streak': streak,
-        'week': {
-            'labels': day_names, 'hours': [round(m/60, 2) for m in mins],
-            'minutes': [round(m, 1) for m in mins], 'total_str': fmt_duration(total),
-            'today_index': today.weekday(),
-            'day_subjects': {str(i): {k: {'minutes': round(v['minutes'],1), 'str': fmt_duration(v['minutes']), 'color': v['color']} for k,v in day_subject[i].items()} for i in range(7)},
-        },
-        'subjects': [{'name': k, 'minutes': v['minutes'], 'str': fmt_duration(v['minutes']), 'color': v['color']} for k,v in subjects_sorted],
-        'recent': [{'subject': s.subject.name, 'emoji': s.subject.emoji,
-            'date_str': s.start_time.strftime('%d/%m'), 'weekday': day_names[s.start_time.weekday()],
-            'time_str': s.start_time.strftime('%H:%M'),
-            'duration_str': fmt_duration(s.duration_minutes or 0),
-            'duration_min': round(s.duration_minutes or 0, 1)} for s in recent]
-    })
 
 # ─── PWA ─────────────────────────────────────────────────────────────────────
 @app.route('/sw.js')

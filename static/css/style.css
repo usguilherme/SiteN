@@ -1179,3 +1179,24 @@ body::before {
   .modal-session-row { grid-template-columns: 20px 1fr auto; }
   .modal-session-date { display: none; }
 }
+
+/* ─── MANUAL SESSION ───────────────────────────────────────────────────── */
+.manual-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 22px; margin-bottom: 28px;
+}
+.manual-grid {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px;
+}
+.manual-field { display: flex; flex-direction: column; gap: 6px; }
+.manual-field label { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.07em; }
+.manual-select, .manual-input {
+  padding: 10px 13px; background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); font-family: var(--font-body); font-size: 14px;
+  outline: none; transition: border 0.2s; width: 100%;
+}
+.manual-select:focus, .manual-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.manual-preview { font-size: 13px; font-weight: 500; min-height: 20px; margin-bottom: 8px; }
+@media (max-width: 700px) { .manual-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .manual-grid { grid-template-columns: 1fr; } }
