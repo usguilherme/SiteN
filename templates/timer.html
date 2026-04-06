@@ -44,6 +44,40 @@
     </div>
   </div>
 
+  <!-- Manual session -->
+  <div class="add-subject-card" style="border-color: rgba(240,165,0,0.2)">
+    <h3 class="add-subject-title">📝 Sessão manual</h3>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
+      Estudou sem o timer? Registre aqui.
+    </p>
+    <div class="add-subject-form">
+      <div style="margin-bottom:10px">
+        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Matéria</label>
+        <select id="manualSubjectId" class="manual-input" style="width:100%">
+          <option value="">Selecione...</option>
+          {% for s in subjects %}
+          <option value="{{ s.id }}">{{ s.emoji }} {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Data</label>
+        <input type="date" id="manualDate" class="manual-input" style="width:100%">
+      </div>
+      <div class="add-subject-row" style="margin-bottom:10px">
+        <div class="emoji-pick">
+          <label>Início</label>
+          <input type="time" id="manualStart" class="manual-input" style="width:100%">
+        </div>
+        <div class="color-pick">
+          <label>Fim</label>
+          <input type="time" id="manualEnd" class="manual-input" style="width:100%">
+        </div>
+      </div>
+      <button class="btn-primary" style="background:var(--gold);color:#080c14" onclick="addManualSession()">Registrar sessão</button>
+    </div>
+  </div>
+
   <!-- Add subject -->
   <div class="add-subject-card">
     <h3 class="add-subject-title">+ Nova matéria</h3>
@@ -289,6 +323,41 @@ async function saveEditSession() {
   if (data.success) { showToast('Sessão atualizada! ✨'); closeEditModal(); loadRecentSessions(); }
   else showToast('Erro ao atualizar');
 }
+
+async function addManualSession() {
+  const subject_id = document.getElementById('manualSubjectId').value;
+  const date       = document.getElementById('manualDate').value;
+  const start      = document.getElementById('manualStart').value;
+  const end        = document.getElementById('manualEnd').value;
+
+  if (!subject_id) { showToast('Selecione a matéria'); return; }
+  if (!date)       { showToast('Informe a data'); return; }
+  if (!start || !end) { showToast('Informe início e fim'); return; }
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  if ((eh*60+em) <= (sh*60+sm)) { showToast('Hora fim deve ser depois do início'); return; }
+
+  const res  = await fetch('/api/manual-session', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ subject_id, start_time: `${date}T${start}:00`, end_time: `${date}T${end}:00` })
+  });
+  const data = await res.json();
+  if (data.success) {
+    showToast(`Sessão de ${data.duration_str} registrada! ✨`);
+    document.getElementById('manualSubjectId').value = '';
+    document.getElementById('manualStart').value = '';
+    document.getElementById('manualEnd').value = '';
+    loadRecentSessions();
+  } else {
+    showToast('Erro ao registrar: ' + (data.error || ''));
+  }
+}
+
+// Set today as default date for manual session
+document.addEventListener('DOMContentLoaded', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('manualDate').value = today;
+});
 
 // Init
 if (isStudying) {
