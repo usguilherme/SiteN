@@ -1,370 +1,816 @@
 {% extends 'base.html' %}
 {% block title %}Timer — StudyTogether{% endblock %}
 
+{% block head %}
+<style>
+/* ── TIMER PAGE ──────────────────────────────────────────────────────────── */
+.timer-page { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+
+/* ── TIMER HERO ──────────────────────────────────────────────────────────── */
+.timer-hero {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; overflow: hidden;
+}
+.timer-hero-top {
+  padding: 44px 40px 36px;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(59,130,246,0.07), transparent);
+  border-bottom: 1px solid var(--border); position: relative;
+  transition: background 0.5s;
+}
+.timer-hero-top.running {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--accent-glow, rgba(59,130,246,0.12)), transparent);
+}
+
+.timer-clock-wrap { position: relative; display: inline-block; }
+.timer-clock-ring {
+  position: absolute; inset: -18px; border-radius: 24px;
+  border: 1.5px solid transparent; pointer-events: none; transition: all 0.4s;
+}
+.running .timer-clock-ring {
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent);
+  animation: clockRingPulse 2.8s ease-in-out infinite;
+}
+@keyframes clockRingPulse {
+  0%,100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #3b82f6) 8%, transparent); }
+  50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent, #3b82f6) 3%, transparent); }
+}
+.timer-clock {
+  font-family: var(--font-mono); font-size: 76px; font-weight: 700;
+  letter-spacing: -0.03em; line-height: 1; color: var(--text);
+  transition: color 0.3s;
+}
+.timer-clock.running { color: #ffffff; }
+
+.timer-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 18px; border-radius: 100px; font-size: 13.5px; font-weight: 500;
+  transition: all 0.3s; white-space: nowrap;
+}
+.timer-pill.idle { color: var(--text-mute); border: 1px dashed var(--border2); }
+.timer-pill.active {
+  background: var(--pill-bg); border: 1px solid var(--pill-border); color: var(--pill-color);
+}
+
+/* ── BOTTOM CONTROLS ────────────────────────────────────────────────────── */
+.timer-hero-bottom { padding: 24px 32px; }
+.subj-label {
+  font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: .07em; margin-bottom: 12px;
+}
+.subj-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.subj-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  border: 1.5px solid var(--border); background: transparent;
+  color: var(--text-dim); font-family: var(--font-body); font-size: 13px;
+  font-weight: 500; transition: all 0.18s; user-select: none;
+}
+.subj-chip:hover { border-color: var(--border2); color: var(--text); background: rgba(255,255,255,0.025); }
+.subj-chip.sel {
+  border-color: var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); color: var(--text);
+}
+.subj-chip.dimmed { opacity: 0.35; }
+
+.btn-main-timer {
+  width: 100%; padding: 15px 20px; border-radius: 13px; border: none;
+  font-family: var(--font-body); font-size: 16px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.btn-main-timer.start-state { background: var(--blue); color: white; }
+.btn-main-timer.start-state:not(:disabled):hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 8px 28px rgba(59,130,246,.35); }
+.btn-main-timer.start-state:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-main-timer.stop-state {
+  background: rgba(244,63,94,.1); color: #f87171;
+  border: 1.5px solid rgba(244,63,94,.25);
+}
+.btn-main-timer.stop-state:hover { background: rgba(244,63,94,.18); }
+
+/* ── RIGHT PANEL ────────────────────────────────────────────────────────── */
+.timer-right { display: flex; flex-direction: column; gap: 16px; }
+.panel-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+}
+.panel-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-head-title { font-size: 13px; font-weight: 600; }
+.panel-head-sub { font-size: 11px; color: var(--text-dim); }
+.panel-body { padding: 16px 18px; }
+
+.fld { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.fld label { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+.fld input, .fld select {
+  padding: 9px 12px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text); font-family: var(--font-body); font-size: 13.5px; outline: none;
+  transition: border .2s; width: 100%;
+}
+.fld input:focus, .fld select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(240,165,0,.1); }
+.fld select {
+  -webkit-appearance: none; appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
+}
+.fld select option { background: #0e1525; }
+.fld-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.btn-gold {
+  width: 100%; padding: 11px; border: none; border-radius: 10px;
+  background: var(--gold); color: #080c14;
+  font-family: var(--font-body); font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all .2s; margin-top: 4px;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.btn-gold:hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(240,165,0,.28); }
+.btn-blue {
+  width: 100%; padding: 11px; border: none; border-radius: 10px;
+  background: var(--blue); color: white;
+  font-family: var(--font-body); font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all .2s; margin-top: 4px;
+}
+.btn-blue:hover { opacity: .88; }
+
+.color-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+.color-swatch {
+  width: 40px; height: 38px; border-radius: 9px; border: 1px solid var(--border);
+  overflow: hidden; cursor: pointer;
+}
+.color-swatch input[type=color] { width: 200%; height: 200%; margin: -50%; border: none; cursor: pointer; }
+
+/* ── SESSIONS TABLE ────────────────────────────────────────────────────── */
+.sessions-section { margin-top: 26px; }
+.sessions-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+}
+.sessions-head-title { font-size: 15px; font-weight: 600; }
+.sessions-badge {
+  font-size: 12px; color: var(--text-dim); background: var(--card);
+  border: 1px solid var(--border); padding: 3px 12px; border-radius: 100px;
+}
+
+.stbl {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+}
+.stbl-header {
+  display: grid; grid-template-columns: 38px 1fr 100px 140px 76px;
+  padding: 10px 18px; border-bottom: 1px solid var(--border);
+  font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .07em;
+}
+.stbl-row {
+  display: grid; grid-template-columns: 38px 1fr 100px 140px 76px;
+  align-items: center; padding: 13px 18px;
+  border-bottom: 1px solid var(--border); transition: background .15s; position: relative;
+}
+.stbl-row:last-child { border-bottom: none; }
+.stbl-row:hover { background: rgba(255,255,255,0.018); }
+.stbl-row.removing { animation: rowOut .28s ease forwards; }
+@keyframes rowOut { to { opacity:0; transform:translateX(-14px); } }
+
+.se-emoji { font-size: 19px; }
+.se-subject { font-size: 13.5px; font-weight: 500; }
+.se-dur { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-dim); }
+.se-date { font-size: 12px; color: var(--text-dim); }
+.se-acts {
+  display: flex; gap: 5px; justify-content: flex-end;
+  opacity: 0; transition: opacity .15s;
+}
+.stbl-row:hover .se-acts { opacity: 1; }
+
+.act-btn {
+  width: 29px; height: 29px; border-radius: 7px; border: 1px solid var(--border);
+  background: transparent; cursor: pointer; font-size: 13px; color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.act-btn:hover { border-color: var(--border2); color: var(--text); background: var(--card2); }
+.act-btn.del-btn:hover { background: rgba(244,63,94,.1); border-color: rgba(244,63,94,.3); color: #f87171; }
+.act-btn.edit-btn:hover { background: rgba(240,165,0,.08); border-color: rgba(240,165,0,.3); color: var(--gold); }
+
+/* Inline delete confirm */
+.del-confirm-inline {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card2); border: 1px solid rgba(244,63,94,.3);
+  border-radius: 10px; padding: 7px 12px; z-index: 10;
+  animation: fadeIn .15s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform: translateY(-50%) translateX(8px); } }
+.del-confirm-inline span { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+.dc-yes, .dc-no {
+  padding: 4px 11px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; font-family: var(--font-body); border: 1px solid;
+  transition: all .12s;
+}
+.dc-yes { background: rgba(244,63,94,.14); color: #f87171; border-color: rgba(244,63,94,.3); }
+.dc-yes:hover { background: rgba(244,63,94,.26); }
+.dc-no { background: transparent; color: var(--text-dim); border-color: var(--border); }
+.dc-no:hover { color: var(--text); border-color: var(--border2); }
+
+/* Empty / Loading */
+.stbl-empty {
+  padding: 52px 20px; text-align: center;
+  color: var(--text-dim); font-size: 14px; line-height: 1.8;
+}
+.stbl-empty .empty-icon { font-size: 34px; display: block; margin-bottom: 10px; }
+.stbl-loading { padding: 28px; text-align: center; color: var(--text-mute); font-size: 13px; }
+
+/* ── EDIT DRAWER ─────────────────────────────────────────────────────────── */
+.drawer-back {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  backdrop-filter: blur(4px); z-index: 200;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+}
+.drawer-back.open { opacity: 1; pointer-events: all; }
+
+.edit-drawer {
+  position: fixed; right: 0; top: 0; bottom: 0; width: min(420px, 100vw);
+  background: var(--card); border-left: 1px solid var(--border2);
+  z-index: 201; display: flex; flex-direction: column;
+  transform: translateX(102%);
+  transition: transform .32s cubic-bezier(0.16,1,0.3,1);
+  box-shadow: -20px 0 64px rgba(0,0,0,.5);
+}
+.edit-drawer.open { transform: translateX(0); }
+
+.drw-head {
+  padding: 22px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.drw-title { font-family: var(--font-head); font-size: 22px; font-weight: 600; }
+.drw-close {
+  width: 33px; height: 33px; border-radius: 8px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim); cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.drw-close:hover { background: var(--card2); color: var(--text); border-color: var(--border2); }
+
+.drw-body { padding: 22px 24px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+
+/* Subject picker in drawer */
+.drw-subj-current {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px; border-radius: 12px; background: var(--bg2);
+  border: 1px solid var(--border); cursor: pointer; transition: border .2s;
+}
+.drw-subj-current:hover { border-color: var(--gold); }
+.drw-subj-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.drw-subj-label { font-size: 14.5px; font-weight: 500; flex: 1; }
+.drw-subj-hint { font-size: 11.5px; color: var(--text-dim); }
+
+.drw-subj-grid { display: none; flex-wrap: wrap; gap: 7px; }
+.drw-subj-grid.show { display: flex; }
+.drw-subj-opt {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  font-family: var(--font-body); font-size: 12.5px; color: var(--text-dim);
+  transition: all .15s;
+}
+.drw-subj-opt:hover { border-color: var(--border2); color: var(--text); }
+.drw-subj-opt.sel { border-color: var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); color: var(--text); }
+
+.drw-fld { display: flex; flex-direction: column; gap: 6px; }
+.drw-fld label { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 500; }
+.drw-fld input {
+  padding: 11px 14px; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text); font-family: var(--font-body);
+  font-size: 14px; outline: none; transition: border .2s; width: 100%;
+}
+.drw-fld input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(240,165,0,.1); }
+.drw-time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.drw-dur-preview {
+  padding: 12px 16px; border-radius: 10px;
+  background: rgba(240,165,0,.07); border: 1px solid rgba(240,165,0,.18);
+  text-align: center; font-size: 13px; color: var(--text-dim);
+}
+.drw-dur-val { color: var(--gold); font-family: var(--font-mono); font-size: 18px; font-weight: 700; display: block; margin-bottom: 2px; }
+
+.drw-foot {
+  padding: 18px 24px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex-shrink: 0;
+}
+.drw-cancel {
+  padding: 12px; border-radius: 11px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  font-family: var(--font-body); font-size: 14px; font-weight: 500; transition: all .2s;
+}
+.drw-cancel:hover { border-color: var(--border2); color: var(--text); }
+.drw-save {
+  padding: 12px; border-radius: 11px; border: none;
+  background: var(--blue); color: white; cursor: pointer;
+  font-family: var(--font-body); font-size: 14px; font-weight: 700; transition: all .2s;
+}
+.drw-save:hover { opacity: .88; transform: translateY(-1px); }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .timer-page { grid-template-columns: 1fr; }
+  .timer-clock { font-size: 58px; }
+  .stbl-header, .stbl-row { grid-template-columns: 34px 1fr 90px 110px 64px; }
+}
+@media (max-width: 600px) {
+  .timer-hero-top { padding: 28px 20px 24px; }
+  .timer-hero-bottom { padding: 18px 18px; }
+  .timer-clock { font-size: 46px; }
+  .stbl-header { display: none; }
+  .stbl-row { grid-template-columns: 30px 1fr auto auto; gap: 8px; }
+  .se-date { display: none; }
+  .se-acts { opacity: 1; }
+  .edit-drawer { width: 100vw; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <div>
     <h2 class="page-title">Timer</h2>
-    <p class="page-sub">Registre sua sessão de estudos</p>
+    <p class="page-sub">Gerencie e registre suas sessões de estudo</p>
   </div>
 </div>
 
-<div class="timer-layout">
-  <!-- Timer principal -->
-  <div class="timer-card">
-    <div class="timer-display" id="timerDisplay">00:00:00</div>
-    <div class="timer-subject-badge" id="timerSubjectBadge" style="display:none"></div>
+<div class="timer-page">
 
-    <div class="timer-controls" id="timerControls">
-      <!-- Subject selector (shown when not studying) -->
-      <div id="subjectSelector">
-        <div class="timer-select-label">Selecione a matéria</div>
-        <div class="subject-picker" id="subjectPicker">
-          {% if subjects %}
-            {% for s in subjects %}
-            <button class="subject-pick-btn" data-id="{{ s.id }}" data-name="{{ s.name }}" data-emoji="{{ s.emoji }}" data-color="{{ s.color }}"
-                    onclick="selectSubject({{ s.id }}, '{{ s.name }}', '{{ s.emoji }}', '{{ s.color }}')">
-              <span>{{ s.emoji }}</span>
-              <span>{{ s.name }}</span>
-            </button>
-            {% endfor %}
-          {% else %}
-            <p class="empty-state">Nenhuma matéria cadastrada ainda.</p>
-          {% endif %}
-        </div>
-        <button class="btn-primary timer-start-btn" id="startBtn" onclick="startSession()" disabled>
-          ▶ Iniciar
+  <!-- ── TIMER HERO ──────────────────────────────────────────────────────── -->
+  <div class="timer-hero">
+    <div class="timer-hero-top" id="heroTop">
+      <div class="timer-clock-wrap">
+        <div class="timer-clock-ring" id="clockRing"></div>
+        <div class="timer-clock" id="clockDisplay">00:00:00</div>
+      </div>
+      <div class="timer-pill idle" id="timerPill">Nenhuma matéria selecionada</div>
+    </div>
+
+    <div class="timer-hero-bottom">
+      <div class="subj-label">Selecionar matéria</div>
+      <div class="subj-grid" id="subjGrid">
+        {% for s in subjects %}
+        <button class="subj-chip {% if active and active.subject_id == s.id %}sel{% endif %}"
+                data-id="{{ s.id }}" data-name="{{ s.name }}"
+                data-emoji="{{ s.emoji }}" data-color="{{ s.color }}"
+                style="--sc:{{ s.color }}"
+                onclick="pickSubj(this)">
+          <span style="font-size:15px">{{ s.emoji }}</span>
+          <span>{{ s.name }}</span>
         </button>
+        {% else %}
+        <p style="font-size:13px;color:var(--text-dim)">Adicione matérias no painel ao lado →</p>
+        {% endfor %}
       </div>
 
-      <!-- Stop button (shown when studying) -->
-      <div id="stopControls" style="display:none">
-        <button class="btn-stop" onclick="stopSession()">⏹ Encerrar sessão</button>
-      </div>
+      <button class="btn-main-timer start-state" id="mainTimerBtn"
+              onclick="toggleTimer()" {% if not active and not subjects %}disabled{% endif %}>
+        {% if active %}
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="1" y="1" width="5" height="12" rx="1"/><rect x="8" y="1" width="5" height="12" rx="1"/></svg>
+        Encerrar sessão
+        {% else %}
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><polygon points="3,1 13,7 3,13"/></svg>
+        Iniciar sessão
+        {% endif %}
+      </button>
     </div>
   </div>
 
-  <!-- Manual session -->
-  <div class="add-subject-card" style="border-color: rgba(240,165,0,0.2)">
-    <h3 class="add-subject-title">📝 Sessão manual</h3>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
-      Estudou sem o timer? Registre aqui.
-    </p>
-    <div class="add-subject-form">
-      <div style="margin-bottom:10px">
-        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Matéria</label>
-        <select id="manualSubjectId" class="manual-input" style="width:100%">
-          <option value="">Selecione...</option>
-          {% for s in subjects %}
-          <option value="{{ s.id }}">{{ s.emoji }} {{ s.name }}</option>
-          {% endfor %}
-        </select>
+  <!-- ── RIGHT PANEL ─────────────────────────────────────────────────────── -->
+  <div class="timer-right">
+
+    <!-- Manual session -->
+    <div class="panel-card">
+      <div class="panel-head">
+        <span class="panel-head-title">✦ Sessão manual</span>
+        <span class="panel-head-sub">Estudou sem o timer?</span>
       </div>
-      <div style="margin-bottom:10px">
-        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Data</label>
-        <input type="date" id="manualDate" class="manual-input" style="width:100%">
-      </div>
-      <div class="add-subject-row" style="margin-bottom:10px">
-        <div class="emoji-pick">
-          <label>Início</label>
-          <input type="time" id="manualStart" class="manual-input" style="width:100%">
+      <div class="panel-body">
+        <div class="fld">
+          <label>Matéria</label>
+          <select id="manualSubj">
+            <option value="">Selecione...</option>
+            {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.emoji }} {{ s.name }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="color-pick">
-          <label>Fim</label>
-          <input type="time" id="manualEnd" class="manual-input" style="width:100%">
+        <div class="fld">
+          <label>Data</label>
+          <input type="date" id="manualDate">
         </div>
+        <div class="fld-row">
+          <div class="fld"><label>Início</label><input type="time" id="manualStart"></div>
+          <div class="fld"><label>Fim</label><input type="time" id="manualEnd"></div>
+        </div>
+        <button class="btn-gold" onclick="registerManual()">✦ Registrar</button>
       </div>
-      <button class="btn-primary" style="background:var(--gold);color:#080c14" onclick="addManualSession()">Registrar sessão</button>
     </div>
+
+    <!-- New subject -->
+    <div class="panel-card">
+      <div class="panel-head">
+        <span class="panel-head-title">+ Nova matéria</span>
+      </div>
+      <div class="panel-body">
+        <div class="fld"><label>Nome</label><input type="text" id="newSubjName" placeholder="Ex: Cálculo II" maxlength="40"></div>
+        <div class="color-row">
+          <div class="fld" style="margin-bottom:0">
+            <label>Emoji</label>
+            <input type="text" id="newSubjEmoji" value="📚" maxlength="2">
+          </div>
+          <div class="fld" style="margin-bottom:0">
+            <label>Cor</label>
+            <div class="color-swatch"><input type="color" id="newSubjColor" value="#3b82f6"></div>
+          </div>
+        </div>
+        <button class="btn-blue" onclick="addSubject()">Adicionar matéria</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── SESSIONS TABLE ─────────────────────────────────────────────────────── -->
+<div class="sessions-section">
+  <div class="sessions-head">
+    <span class="sessions-head-title">Sessões recentes</span>
+    <span class="sessions-badge" id="sessionsBadge">—</span>
   </div>
 
-  <!-- Add subject -->
-  <div class="add-subject-card">
-    <h3 class="add-subject-title">+ Nova matéria</h3>
-    <div class="add-subject-form">
-      <input type="text" id="newSubjectName" placeholder="Nome da matéria" maxlength="50">
-      <div class="add-subject-row">
-        <div class="emoji-pick">
-          <label>Emoji</label>
-          <input type="text" id="newSubjectEmoji" value="📚" maxlength="2">
-        </div>
-        <div class="color-pick">
-          <label>Cor</label>
-          <input type="color" id="newSubjectColor" value="#3b82f6">
-        </div>
-      </div>
-      <button class="btn-primary" onclick="addSubject()">Adicionar</button>
+  <div class="stbl">
+    <div class="stbl-header">
+      <div></div><div>Matéria</div><div>Duração</div><div>Data / Hora</div><div></div>
+    </div>
+    <div id="sessionsList">
+      <div class="stbl-loading">Carregando...</div>
     </div>
   </div>
 </div>
 
-<!-- Last sessions -->
-<div class="section-header">
-  <h3 class="section-title-lg">Sessões recentes</h3>
-</div>
-<div id="recentSessions" class="recent-sessions">
-  <div class="loading-sessions">Carregando...</div>
-</div>
-<!-- Edit Session Modal -->
-<div class="modal-overlay" id="editModalOverlay" onclick="closeEditModal()"></div>
-<div class="modal-panel" id="editModal" style="max-width:420px">
-  <div class="modal-header">
-    <div class="modal-user-info">
-      <div style="font-size:22px">✏️</div>
-      <div class="modal-username" id="editSessionTitle">Editar sessão</div>
-    </div>
-    <button class="modal-close" onclick="closeEditModal()">✕</button>
+<!-- ── EDIT DRAWER ────────────────────────────────────────────────────────── -->
+<div class="drawer-back" id="drawerBack" onclick="closeDrawer()"></div>
+<aside class="edit-drawer" id="editDrawer" role="dialog" aria-label="Editar sessão">
+  <div class="drw-head">
+    <div class="drw-title">Editar sessão</div>
+    <button class="drw-close" onclick="closeDrawer()" aria-label="Fechar">✕</button>
   </div>
-  <div class="modal-body" style="gap:14px">
-    <input type="hidden" id="editSubjectId">
-    <div class="modal-section">
-      <div class="modal-section-title">Data</div>
-      <input type="date" id="editDate" class="manual-input" style="width:100%">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="modal-section">
-        <div class="modal-section-title">Hora início</div>
-        <input type="time" id="editStart" class="manual-input" style="width:100%">
+  <div class="drw-body">
+    <input type="hidden" id="drwSessionId">
+
+    <!-- Subject -->
+    <div>
+      <div class="drw-subj-current" onclick="toggleDrwSubjGrid()">
+        <div class="drw-subj-dot" id="drwSubjDot"></div>
+        <span class="drw-subj-label" id="drwSubjLabel"></span>
+        <span class="drw-subj-hint">Trocar ↓</span>
       </div>
-      <div class="modal-section">
-        <div class="modal-section-title">Hora fim</div>
-        <input type="time" id="editEnd" class="manual-input" style="width:100%">
+      <div class="drw-subj-grid" id="drwSubjGrid">
+        {% for s in subjects %}
+        <button class="drw-subj-opt" data-id="{{ s.id }}" data-color="{{ s.color }}"
+                style="--sc:{{ s.color }}" onclick="pickDrwSubj(this)">
+          {{ s.emoji }} {{ s.name }}
+        </button>
+        {% endfor %}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
-      <button class="btn-ghost" style="padding:12px;justify-content:center" onclick="closeEditModal()">Cancelar</button>
-      <button class="btn-primary" style="padding:12px;justify-content:center" onclick="saveEditSession()">Salvar</button>
+
+    <div class="drw-fld">
+      <label>Data</label>
+      <input type="date" id="drwDate">
+    </div>
+
+    <div class="drw-time-row">
+      <div class="drw-fld"><label>Início</label><input type="time" id="drwStart" oninput="refreshDurPreview()"></div>
+      <div class="drw-fld"><label>Fim</label><input type="time" id="drwEnd" oninput="refreshDurPreview()"></div>
+    </div>
+
+    <div class="drw-dur-preview">
+      <span class="drw-dur-val" id="drwDurVal">—</span>
+      duração calculada
     </div>
   </div>
-</div>
+  <div class="drw-foot">
+    <button class="drw-cancel" onclick="closeDrawer()">Cancelar</button>
+    <button class="drw-save" onclick="saveDrawer()">Salvar alterações</button>
+  </div>
+</aside>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-let selectedSubjectId   = null;
-let timerInterval       = null;
-let sessionStartTime    = null;
-let isStudying          = false;
+// ── STATE ────────────────────────────────────────────────────────────────────
+let selSubjId    = null;
+let selSubjColor = '#3b82f6';
+let tInterval    = null;
+let tStart       = null;
+let isRunning    = false;
+let drwSubjId    = null;
+let activeDelConfirm = null;
 
 {% if active %}
-// Restore active session from server
-selectedSubjectId = {{ active.subject_id }};
-sessionStartTime  = new Date('{{ active.start_time.isoformat() }}Z');
-isStudying = true;
+selSubjId    = {{ active.subject_id }};
+tStart       = new Date('{{ active.start_time.isoformat() }}Z');
+isRunning    = true;
+const _aBtn  = document.querySelector('.subj-chip[data-id="{{ active.subject_id }}"]');
+if (_aBtn) { selSubjColor = _aBtn.dataset.color; activateRunningUI(_aBtn); }
+startTick();
 {% endif %}
 
-function selectSubject(id, name, emoji, color) {
-  selectedSubjectId = id;
-  document.querySelectorAll('.subject-pick-btn').forEach(b => b.classList.remove('selected'));
-  const btn = document.querySelector(`.subject-pick-btn[data-id="${id}"]`);
-  if (btn) btn.classList.add('selected');
-  document.getElementById('startBtn').disabled = false;
+// Today default
+document.getElementById('manualDate').value = new Date().toISOString().slice(0,10);
+
+// ── SUBJECT PICK ─────────────────────────────────────────────────────────────
+function pickSubj(el) {
+  if (isRunning) return;
+  document.querySelectorAll('.subj-chip').forEach(b => b.classList.remove('sel'));
+  el.classList.add('sel');
+  selSubjId    = parseInt(el.dataset.id);
+  selSubjColor = el.dataset.color;
+  const pill   = document.getElementById('timerPill');
+  pill.className = 'timer-pill active';
+  pill.style.cssText += `;--pill-bg:${el.dataset.color}18;--pill-border:${el.dataset.color}40;--pill-color:${el.dataset.color}`;
+  pill.textContent = el.dataset.emoji + ' ' + el.dataset.name;
+  document.getElementById('mainTimerBtn').disabled = false;
+  document.getElementById('heroTop').style.setProperty('--accent-glow', el.dataset.color + '18');
+  document.getElementById('clockRing').style.setProperty('--accent', el.dataset.color);
 }
 
-function updateTimerDisplay() {
-  if (!sessionStartTime) return;
-  const elapsed = Math.floor((Date.now() - sessionStartTime.getTime()) / 1000);
-  const h = Math.floor(elapsed / 3600);
-  const m = Math.floor((elapsed % 3600) / 60);
-  const s = elapsed % 60;
-  document.getElementById('timerDisplay').textContent =
-    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+// ── TIMER ────────────────────────────────────────────────────────────────────
+async function toggleTimer() {
+  isRunning ? await doStop() : await doStart();
 }
 
-function setStudyingUI(studying, subjectName, subjectEmoji, subjectColor) {
-  document.getElementById('subjectSelector').style.display  = studying ? 'none' : 'block';
-  document.getElementById('stopControls').style.display     = studying ? 'block' : 'none';
-  const badge = document.getElementById('timerSubjectBadge');
-  if (studying && subjectName) {
-    badge.style.display     = 'inline-flex';
-    badge.style.background  = subjectColor + '22';
-    badge.style.color       = subjectColor;
-    badge.style.borderColor = subjectColor + '44';
-    badge.textContent       = `${subjectEmoji} ${subjectName}`;
-  } else {
-    badge.style.display = 'none';
-  }
-}
-
-async function startSession() {
-  if (!selectedSubjectId) return;
-  const btn = document.querySelector(`.subject-pick-btn[data-id="${selectedSubjectId}"]`);
-  const name  = btn?.dataset.name  || '';
-  const emoji = btn?.dataset.emoji || '📚';
-  const color = btn?.dataset.color || '#3b82f6';
-
-  const res  = await fetch('/api/start-session', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ subject_id: selectedSubjectId })
+async function doStart() {
+  if (!selSubjId) { showToast('Selecione uma matéria'); return; }
+  const el  = document.querySelector(`.subj-chip[data-id="${selSubjId}"]`);
+  const res = await fetch('/api/start-session', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ subject_id: selSubjId })
   });
-  const data = await res.json();
-  if (!data.success) { showToast('Erro ao iniciar sessão'); return; }
-
-  sessionStartTime = new Date(data.start_time + 'Z');
-  isStudying = true;
-  setStudyingUI(true, name, emoji, color);
-  timerInterval = setInterval(updateTimerDisplay, 1000);
-  updateTimerDisplay();
+  const d = await res.json();
+  if (!d.success) { showToast('Erro ao iniciar'); return; }
+  tStart    = new Date(d.start_time + 'Z');
+  isRunning = true;
+  activateRunningUI(el);
+  startTick();
 }
 
-async function stopSession() {
-  const res  = await fetch('/api/stop-session', { method: 'POST' });
-  const data = await res.json();
-  if (!data.success) { showToast('Erro ao encerrar sessão'); return; }
-
-  clearInterval(timerInterval);
-  timerInterval    = null;
-  sessionStartTime = null;
-  isStudying       = false;
-  document.getElementById('timerDisplay').textContent = '00:00:00';
-  setStudyingUI(false);
-  showToast(`Sessão encerrada! ${data.duration_str} estudados ✨`);
-  loadRecentSessions();
+async function doStop() {
+  const res = await fetch('/api/stop-session', { method:'POST' });
+  const d   = await res.json();
+  if (!d.success) { showToast('Erro ao encerrar'); return; }
+  clearInterval(tInterval); tInterval = null;
+  tStart = null; isRunning = false;
+  deactivateRunningUI();
+  document.getElementById('clockDisplay').textContent = '00:00:00';
+  showToast(`✨ ${d.duration_str} registrados!`);
+  loadSessions();
 }
 
-async function addSubject() {
-  const name  = document.getElementById('newSubjectName').value.trim();
-  const emoji = document.getElementById('newSubjectEmoji').value.trim() || '📚';
-  const color = document.getElementById('newSubjectColor').value;
-  if (!name) { showToast('Informe o nome da matéria'); return; }
-
-  const res  = await fetch('/api/add-subject', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ name, emoji, color })
+function activateRunningUI(el) {
+  const color = el?.dataset.color || selSubjColor;
+  const name  = el ? el.dataset.emoji + ' ' + el.dataset.name : '';
+  document.getElementById('heroTop').classList.add('running');
+  document.getElementById('clockDisplay').classList.add('running');
+  document.getElementById('mainTimerBtn').className = 'btn-main-timer stop-state';
+  document.getElementById('mainTimerBtn').innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="1" y="1" width="5" height="12" rx="1"/><rect x="8" y="1" width="5" height="12" rx="1"/></svg>
+    Encerrar sessão`;
+  const pill = document.getElementById('timerPill');
+  pill.className = 'timer-pill active';
+  pill.style.cssText += `;--pill-bg:${color}18;--pill-border:${color}40;--pill-color:${color}`;
+  if (name) pill.textContent = name;
+  document.getElementById('clockRing').style.setProperty('--accent', color);
+  document.getElementById('heroTop').style.setProperty('--accent-glow', color + '18');
+  // Dim unselected chips
+  document.querySelectorAll('.subj-chip').forEach(b => {
+    b.style.opacity = parseInt(b.dataset.id) === selSubjId ? '1' : '0.35';
+    b.style.pointerEvents = 'none';
   });
-  const data = await res.json();
-  if (!data.success) { showToast('Erro ao adicionar matéria'); return; }
-
-  document.getElementById('newSubjectName').value = '';
-  showToast(`${emoji} ${name} adicionada!`);
-
-  // Add to picker dynamically
-  const picker = document.getElementById('subjectPicker');
-  const btn = document.createElement('button');
-  btn.className = 'subject-pick-btn';
-  btn.dataset.id    = data.id;
-  btn.dataset.name  = data.name;
-  btn.dataset.emoji = data.emoji;
-  btn.dataset.color = data.color;
-  btn.onclick = () => selectSubject(data.id, data.name, data.emoji, data.color);
-  btn.innerHTML = `<span>${data.emoji}</span><span>${data.name}</span>`;
-  picker.appendChild(btn);
 }
 
-async function loadRecentSessions() {
+function deactivateRunningUI() {
+  document.getElementById('heroTop').classList.remove('running');
+  document.getElementById('clockDisplay').classList.remove('running');
+  document.getElementById('mainTimerBtn').className = 'btn-main-timer start-state';
+  document.getElementById('mainTimerBtn').innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><polygon points="3,1 13,7 3,13"/></svg>
+    Iniciar sessão`;
+  document.getElementById('timerPill').className = 'timer-pill idle';
+  document.getElementById('timerPill').textContent = 'Nenhuma matéria selecionada';
+  document.querySelectorAll('.subj-chip').forEach(b => {
+    b.style.opacity = '1'; b.style.pointerEvents = '';
+  });
+}
+
+function startTick() {
+  clearInterval(tInterval);
+  tInterval = setInterval(tick, 500);
+  tick();
+}
+function tick() {
+  if (!tStart) return;
+  const s = Math.floor((Date.now() - tStart.getTime()) / 1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  document.getElementById('clockDisplay').textContent =
+    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+// ── SESSIONS ─────────────────────────────────────────────────────────────────
+async function loadSessions() {
   try {
     const res  = await fetch('/api/recent-sessions-full');
     const data = await res.json();
-    const container = document.getElementById('recentSessions');
-    if (!data.sessions || !data.sessions.length) {
-      container.innerHTML = '<div class="empty-state">Nenhuma sessão ainda.</div>';
+    const list = document.getElementById('sessionsList');
+    const badge = document.getElementById('sessionsBadge');
+    const sessions = data.sessions || [];
+    badge.textContent = sessions.length + (sessions.length === 15 ? '+' : '') + ' sessões';
+
+    if (!sessions.length) {
+      list.innerHTML = `<div class="stbl-empty"><span class="empty-icon">📋</span>Nenhuma sessão registrada ainda.<br>Inicie o timer ou adicione manualmente.</div>`;
       return;
     }
-    container.innerHTML = data.sessions.map(s => `
-      <div class="session-row" id="session-${s.id}">
-        <span class="session-emoji">${s.emoji}</span>
-        <span class="session-subject">${s.subject}</span>
-        <span class="session-duration">${s.duration_str}</span>
-        <span class="session-date">${s.date_str}</span>
-        <div class="session-actions">
-          <button class="session-btn-edit" onclick="openEditSession(${s.id}, '${s.subject}', '${s.emoji}', '${s.start_raw}', '${s.end_raw}', ${s.subject_id})" title="Editar">✏️</button>
-          <button class="session-btn-del" onclick="deleteSession(${s.id})" title="Excluir">🗑</button>
+
+    list.innerHTML = sessions.map(s => `
+      <div class="stbl-row" id="sr-${s.id}">
+        <div class="se-emoji">${s.emoji}</div>
+        <div class="se-subject">${s.subject}</div>
+        <div class="se-dur">${s.duration_str}</div>
+        <div class="se-date">${s.date_str}</div>
+        <div class="se-acts">
+          <button class="act-btn edit-btn" title="Editar"
+            onclick="openDrawer(${s.id},'${esc(s.subject)}','${s.emoji}','${s.start_raw}','${s.end_raw}',${s.subject_id},'${s.subject_color||'#3b82f6'}')">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a2.121 2.121 0 013 3L5 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <button class="act-btn del-btn" title="Excluir" onclick="confirmDel(${s.id})">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><polyline points="1,4 15,4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 4V2h6v2M3 4l1 10h8l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-      </div>
-    `).join('');
+      </div>`).join('');
   } catch(e) {
-    document.getElementById('recentSessions').innerHTML = '<div class="empty-state">Erro ao carregar sessões.</div>';
+    document.getElementById('sessionsList').innerHTML = `<div class="stbl-empty"><span class="empty-icon">⚠️</span>Erro ao carregar sessões.</div>`;
   }
 }
 
-async function deleteSession(id) {
-  if (!confirm('Excluir esta sessão?')) return;
-  const res = await fetch(`/api/session/${id}`, { method: 'DELETE' });
-  const data = await res.json();
-  if (data.success) { showToast('Sessão excluída!'); loadRecentSessions(); }
-  else showToast('Erro ao excluir');
+function esc(s) { return s.replace(/'/g, "\\'"); }
+
+// ── DELETE ────────────────────────────────────────────────────────────────────
+function confirmDel(id) {
+  if (activeDelConfirm) { activeDelConfirm.remove(); activeDelConfirm = null; }
+  const row = document.getElementById(`sr-${id}`);
+  if (!row) return;
+  const box = document.createElement('div');
+  box.className = 'del-confirm-inline';
+  box.innerHTML = `
+    <span>Excluir sessão?</span>
+    <button class="dc-no" onclick="cancelDel()">Não</button>
+    <button class="dc-yes" onclick="execDel(${id})">Excluir</button>`;
+  row.appendChild(box);
+  activeDelConfirm = box;
+}
+function cancelDel() { if (activeDelConfirm) { activeDelConfirm.remove(); activeDelConfirm = null; } }
+
+async function execDel(id) {
+  cancelDel();
+  const row = document.getElementById(`sr-${id}`);
+  if (row) row.classList.add('removing');
+  const res = await fetch(`/api/session/${id}`, { method:'DELETE' });
+  const d   = await res.json();
+  if (d.success) { showToast('Sessão removida'); setTimeout(loadSessions, 300); }
+  else { showToast('Erro ao excluir'); loadSessions(); }
 }
 
-let editingSessionId = null;
-
-function openEditSession(id, subject, emoji, startRaw, endRaw, subjectId) {
-  editingSessionId = id;
-  document.getElementById('editSessionTitle').textContent = `${emoji} ${subject}`;
-  // Parse datetime: format is "YYYY-MM-DDTHH:MM"
-  const startDt = startRaw.slice(0,16);
-  const endDt   = endRaw.slice(0,16);
-  document.getElementById('editDate').value  = startDt.slice(0,10);
-  document.getElementById('editStart').value = startDt.slice(11,16);
-  document.getElementById('editEnd').value   = endDt.slice(11,16);
-  document.getElementById('editSubjectId').value = subjectId;
-  document.getElementById('editModalOverlay').classList.add('open');
-  document.getElementById('editModal').classList.add('open');
+// ── EDIT DRAWER ───────────────────────────────────────────────────────────────
+function openDrawer(id, subject, emoji, startRaw, endRaw, subjId, color) {
+  document.getElementById('drwSessionId').value = id;
+  document.getElementById('drwSubjLabel').textContent = emoji + ' ' + subject;
+  document.getElementById('drwSubjDot').style.background = color;
+  drwSubjId = parseInt(subjId);
+  document.querySelectorAll('.drw-subj-opt').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.id) === drwSubjId));
+  document.getElementById('drwDate').value  = startRaw.slice(0,10);
+  document.getElementById('drwStart').value = startRaw.slice(11,16);
+  document.getElementById('drwEnd').value   = endRaw ? endRaw.slice(11,16) : '';
+  refreshDurPreview();
+  document.getElementById('drawerBack').classList.add('open');
+  document.getElementById('editDrawer').classList.add('open');
 }
 
-function closeEditModal() {
-  document.getElementById('editModalOverlay').classList.remove('open');
-  document.getElementById('editModal').classList.remove('open');
+function closeDrawer() {
+  document.getElementById('drawerBack').classList.remove('open');
+  document.getElementById('editDrawer').classList.remove('open');
+  document.getElementById('drwSubjGrid').classList.remove('show');
 }
 
-async function saveEditSession() {
-  const date  = document.getElementById('editDate').value;
-  const start = document.getElementById('editStart').value;
-  const end   = document.getElementById('editEnd').value;
-  const subject_id = document.getElementById('editSubjectId').value;
-  if (!date || !start || !end) { showToast('Preencha todos os campos'); return; }
-  const [sh,sm] = start.split(':').map(Number);
-  const [eh,em] = end.split(':').map(Number);
+function toggleDrwSubjGrid() {
+  document.getElementById('drwSubjGrid').classList.toggle('show');
+}
+
+function pickDrwSubj(btn) {
+  document.querySelectorAll('.drw-subj-opt').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  drwSubjId = parseInt(btn.dataset.id);
+  document.getElementById('drwSubjLabel').textContent = btn.textContent.trim();
+  document.getElementById('drwSubjDot').style.background = btn.dataset.color;
+  document.getElementById('drwSubjGrid').classList.remove('show');
+}
+
+function refreshDurPreview() {
+  const s = document.getElementById('drwStart').value;
+  const e = document.getElementById('drwEnd').value;
+  const el = document.getElementById('drwDurVal');
+  if (!s || !e) { el.textContent = '—'; return; }
+  const [sh,sm] = s.split(':').map(Number), [eh,em] = e.split(':').map(Number);
+  const mins = (eh*60+em) - (sh*60+sm);
+  if (mins <= 0) { el.textContent = '—'; return; }
+  el.textContent = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60?` ${mins%60}min`:''}` : `${mins} min`;
+}
+
+async function saveDrawer() {
+  const id    = document.getElementById('drwSessionId').value;
+  const date  = document.getElementById('drwDate').value;
+  const start = document.getElementById('drwStart').value;
+  const end   = document.getElementById('drwEnd').value;
+  if (!date||!start||!end) { showToast('Preencha todos os campos'); return; }
+  const [sh,sm] = start.split(':').map(Number), [eh,em] = end.split(':').map(Number);
   if ((eh*60+em) <= (sh*60+sm)) { showToast('Hora fim deve ser depois do início'); return; }
-  const res = await fetch(`/api/session/${editingSessionId}`, {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ start_time: `${date}T${start}:00`, end_time: `${date}T${end}:00`, subject_id })
+  const res = await fetch(`/api/session/${id}`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ start_time:`${date}T${start}:00`, end_time:`${date}T${end}:00`, subject_id: drwSubjId })
   });
-  const data = await res.json();
-  if (data.success) { showToast('Sessão atualizada! ✨'); closeEditModal(); loadRecentSessions(); }
-  else showToast('Erro ao atualizar');
+  const d = await res.json();
+  if (d.success) { showToast('Atualizado ✨'); closeDrawer(); loadSessions(); }
+  else showToast('Erro: ' + (d.error || ''));
 }
 
-async function addManualSession() {
-  const subject_id = document.getElementById('manualSubjectId').value;
-  const date       = document.getElementById('manualDate').value;
-  const start      = document.getElementById('manualStart').value;
-  const end        = document.getElementById('manualEnd').value;
-
-  if (!subject_id) { showToast('Selecione a matéria'); return; }
-  if (!date)       { showToast('Informe a data'); return; }
+// ── MANUAL SESSION ────────────────────────────────────────────────────────────
+async function registerManual() {
+  const subj  = document.getElementById('manualSubj').value;
+  const date  = document.getElementById('manualDate').value;
+  const start = document.getElementById('manualStart').value;
+  const end   = document.getElementById('manualEnd').value;
+  if (!subj)          { showToast('Selecione a matéria'); return; }
+  if (!date)          { showToast('Informe a data'); return; }
   if (!start || !end) { showToast('Informe início e fim'); return; }
-  const [sh,sm] = start.split(':').map(Number);
-  const [eh,em] = end.split(':').map(Number);
+  const [sh,sm] = start.split(':').map(Number), [eh,em] = end.split(':').map(Number);
   if ((eh*60+em) <= (sh*60+sm)) { showToast('Hora fim deve ser depois do início'); return; }
-
-  const res  = await fetch('/api/manual-session', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ subject_id, start_time: `${date}T${start}:00`, end_time: `${date}T${end}:00` })
+  const res = await fetch('/api/manual-session', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ subject_id: subj, start_time:`${date}T${start}:00`, end_time:`${date}T${end}:00` })
   });
-  const data = await res.json();
-  if (data.success) {
-    showToast(`Sessão de ${data.duration_str} registrada! ✨`);
-    document.getElementById('manualSubjectId').value = '';
+  const d = await res.json();
+  if (d.success) {
+    showToast(`${d.duration_str} registrados! ✨`);
+    document.getElementById('manualSubj').value  = '';
     document.getElementById('manualStart').value = '';
-    document.getElementById('manualEnd').value = '';
-    loadRecentSessions();
-  } else {
-    showToast('Erro ao registrar: ' + (data.error || ''));
-  }
+    document.getElementById('manualEnd').value   = '';
+    loadSessions();
+  } else showToast('Erro: ' + (d.error || ''));
 }
 
-// Set today as default date for manual session
-document.addEventListener('DOMContentLoaded', () => {
-  const today = new Date().toISOString().slice(0, 10);
-  document.getElementById('manualDate').value = today;
+// ── ADD SUBJECT ───────────────────────────────────────────────────────────────
+async function addSubject() {
+  const name  = document.getElementById('newSubjName').value.trim();
+  const emoji = document.getElementById('newSubjEmoji').value.trim() || '📚';
+  const color = document.getElementById('newSubjColor').value;
+  if (!name) { showToast('Informe o nome'); return; }
+  const res = await fetch('/api/add-subject', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name, emoji, color })
+  });
+  const d = await res.json();
+  if (!d.success) { showToast('Erro ao adicionar'); return; }
+  document.getElementById('newSubjName').value = '';
+  showToast(`${emoji} ${name} adicionada!`);
+  // Add to all pickers dynamically
+  const grid = document.getElementById('subjGrid');
+  const chip = document.createElement('button');
+  chip.className = 'subj-chip'; chip.dataset.id = d.id; chip.dataset.name = d.name;
+  chip.dataset.emoji = d.emoji; chip.dataset.color = d.color;
+  chip.style = `--sc:${d.color}`; chip.onclick = () => pickSubj(chip);
+  chip.innerHTML = `<span style="font-size:15px">${d.emoji}</span><span>${d.name}</span>`;
+  grid.appendChild(chip);
+
+  const manSel = document.getElementById('manualSubj');
+  const opt = document.createElement('option'); opt.value = d.id; opt.textContent = `${d.emoji} ${d.name}`;
+  manSel.appendChild(opt);
+
+  const drwGrid = document.getElementById('drwSubjGrid');
+  const drwBtn = document.createElement('button');
+  drwBtn.className = 'drw-subj-opt'; drwBtn.dataset.id = d.id; drwBtn.dataset.color = d.color;
+  drwBtn.style = `--sc:${d.color}`; drwBtn.textContent = `${d.emoji} ${d.name}`;
+  drwBtn.onclick = () => pickDrwSubj(drwBtn);
+  drwGrid.appendChild(drwBtn);
+}
+
+// Close delete confirm on outside click
+document.addEventListener('click', e => {
+  if (activeDelConfirm && !activeDelConfirm.contains(e.target)) cancelDel();
 });
 
 // Init
-if (isStudying) {
-  setStudyingUI(true, '', '📚', '#3b82f6');
-  timerInterval = setInterval(updateTimerDisplay, 1000);
-  updateTimerDisplay();
-}
-loadRecentSessions();
+loadSessions();
 </script>
 {% endblock %}
