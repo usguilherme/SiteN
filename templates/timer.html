@@ -64,47 +64,44 @@
   </div>
 </div>
 
-
-<!-- Manual session entry -->
-<div class="section-header" style="margin-top:32px">
-  <h3 class="section-title-lg">Registrar manualmente</h3>
-</div>
-<div class="manual-card">
-  <div class="manual-grid">
-    <div class="manual-field">
-      <label>Matéria</label>
-      <select id="manualSubject" class="manual-select">
-        <option value="">Selecione...</option>
-        {% for s in subjects %}
-        <option value="{{ s.id }}">{{ s.emoji }} {{ s.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="manual-field">
-      <label>Data</label>
-      <input type="date" id="manualDate" class="manual-input">
-    </div>
-    <div class="manual-field">
-      <label>Hora início</label>
-      <input type="time" id="manualStart" class="manual-input" value="08:00">
-    </div>
-    <div class="manual-field">
-      <label>Hora fim</label>
-      <input type="time" id="manualEnd" class="manual-input" value="10:00">
-    </div>
-  </div>
-  <div class="manual-preview" id="manualPreview"></div>
-  <button class="btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:4px" onclick="saveManualSession()">
-    ✚ Registrar sessão
-  </button>
-</div>
-
 <!-- Last sessions -->
 <div class="section-header">
   <h3 class="section-title-lg">Sessões recentes</h3>
 </div>
 <div id="recentSessions" class="recent-sessions">
   <div class="loading-sessions">Carregando...</div>
+</div>
+<!-- Edit Session Modal -->
+<div class="modal-overlay" id="editModalOverlay" onclick="closeEditModal()"></div>
+<div class="modal-panel" id="editModal" style="max-width:420px">
+  <div class="modal-header">
+    <div class="modal-user-info">
+      <div style="font-size:22px">✏️</div>
+      <div class="modal-username" id="editSessionTitle">Editar sessão</div>
+    </div>
+    <button class="modal-close" onclick="closeEditModal()">✕</button>
+  </div>
+  <div class="modal-body" style="gap:14px">
+    <input type="hidden" id="editSubjectId">
+    <div class="modal-section">
+      <div class="modal-section-title">Data</div>
+      <input type="date" id="editDate" class="manual-input" style="width:100%">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="modal-section">
+        <div class="modal-section-title">Hora início</div>
+        <input type="time" id="editStart" class="manual-input" style="width:100%">
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Hora fim</div>
+        <input type="time" id="editEnd" class="manual-input" style="width:100%">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
+      <button class="btn-ghost" style="padding:12px;justify-content:center" onclick="closeEditModal()">Cancelar</button>
+      <button class="btn-primary" style="padding:12px;justify-content:center" onclick="saveEditSession()">Salvar</button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -188,57 +185,7 @@ async function stopSession() {
   document.getElementById('timerDisplay').textContent = '00:00:00';
   setStudyingUI(false);
   showToast(`Sessão encerrada! ${data.duration_str} estudados ✨`);
-  
-// Set today as default date
-document.getElementById('manualDate').valueAsDate = new Date();
-
-document.getElementById('manualStart').addEventListener('change', updatePreview);
-document.getElementById('manualEnd').addEventListener('change', updatePreview);
-
-function updatePreview() {
-  const start = document.getElementById('manualStart').value;
-  const end   = document.getElementById('manualEnd').value;
-  const preview = document.getElementById('manualPreview');
-  if (!start || !end) { preview.textContent = ''; return; }
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let mins = (eh * 60 + em) - (sh * 60 + sm);
-  if (mins <= 0) { preview.textContent = '⚠️ Hora fim deve ser depois do início'; preview.style.color = '#ef4444'; return; }
-  preview.style.color = '#10b981';
-  preview.textContent = `✓ ${mins < 60 ? mins + ' min' : (mins/60).toFixed(1) + 'h'} de estudo`;
-}
-updatePreview();
-
-async function saveManualSession() {
-  const subject_id = document.getElementById('manualSubject').value;
-  const date       = document.getElementById('manualDate').value;
-  const start      = document.getElementById('manualStart').value;
-  const end        = document.getElementById('manualEnd').value;
-
-  if (!subject_id) { showToast('Selecione a matéria'); return; }
-  if (!date)       { showToast('Informe a data'); return; }
-  if (!start || !end) { showToast('Informe os horários'); return; }
-
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const mins = (eh * 60 + em) - (sh * 60 + sm);
-  if (mins <= 0) { showToast('Hora fim deve ser depois do início'); return; }
-
-  const start_time = `${date}T${start}:00`;
-  const end_time   = `${date}T${end}:00`;
-
-  const res  = await fetch('/api/manual-session', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ subject_id, start_time, end_time })
-  });
-  const data = await res.json();
-  if (!data.success) { showToast('Erro ao registrar'); return; }
-
-  showToast(`✓ ${data.duration_str} de estudo registrados!`);
   loadRecentSessions();
-}
-
-loadRecentSessions();
 }
 
 async function addSubject() {
@@ -272,7 +219,7 @@ async function addSubject() {
 
 async function loadRecentSessions() {
   try {
-    const res  = await fetch('/api/recent-sessions');
+    const res  = await fetch('/api/recent-sessions-full');
     const data = await res.json();
     const container = document.getElementById('recentSessions');
     if (!data.sessions || !data.sessions.length) {
@@ -280,16 +227,67 @@ async function loadRecentSessions() {
       return;
     }
     container.innerHTML = data.sessions.map(s => `
-      <div class="session-row">
+      <div class="session-row" id="session-${s.id}">
         <span class="session-emoji">${s.emoji}</span>
         <span class="session-subject">${s.subject}</span>
         <span class="session-duration">${s.duration_str}</span>
         <span class="session-date">${s.date_str}</span>
+        <div class="session-actions">
+          <button class="session-btn-edit" onclick="openEditSession(${s.id}, '${s.subject}', '${s.emoji}', '${s.start_raw}', '${s.end_raw}', ${s.subject_id})" title="Editar">✏️</button>
+          <button class="session-btn-del" onclick="deleteSession(${s.id})" title="Excluir">🗑</button>
+        </div>
       </div>
     `).join('');
   } catch(e) {
     document.getElementById('recentSessions').innerHTML = '<div class="empty-state">Erro ao carregar sessões.</div>';
   }
+}
+
+async function deleteSession(id) {
+  if (!confirm('Excluir esta sessão?')) return;
+  const res = await fetch(`/api/session/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.success) { showToast('Sessão excluída!'); loadRecentSessions(); }
+  else showToast('Erro ao excluir');
+}
+
+let editingSessionId = null;
+
+function openEditSession(id, subject, emoji, startRaw, endRaw, subjectId) {
+  editingSessionId = id;
+  document.getElementById('editSessionTitle').textContent = `${emoji} ${subject}`;
+  // Parse datetime: format is "YYYY-MM-DDTHH:MM"
+  const startDt = startRaw.slice(0,16);
+  const endDt   = endRaw.slice(0,16);
+  document.getElementById('editDate').value  = startDt.slice(0,10);
+  document.getElementById('editStart').value = startDt.slice(11,16);
+  document.getElementById('editEnd').value   = endDt.slice(11,16);
+  document.getElementById('editSubjectId').value = subjectId;
+  document.getElementById('editModalOverlay').classList.add('open');
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('editModalOverlay').classList.remove('open');
+  document.getElementById('editModal').classList.remove('open');
+}
+
+async function saveEditSession() {
+  const date  = document.getElementById('editDate').value;
+  const start = document.getElementById('editStart').value;
+  const end   = document.getElementById('editEnd').value;
+  const subject_id = document.getElementById('editSubjectId').value;
+  if (!date || !start || !end) { showToast('Preencha todos os campos'); return; }
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  if ((eh*60+em) <= (sh*60+sm)) { showToast('Hora fim deve ser depois do início'); return; }
+  const res = await fetch(`/api/session/${editingSessionId}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ start_time: `${date}T${start}:00`, end_time: `${date}T${end}:00`, subject_id })
+  });
+  const data = await res.json();
+  if (data.success) { showToast('Sessão atualizada! ✨'); closeEditModal(); loadRecentSessions(); }
+  else showToast('Erro ao atualizar');
 }
 
 // Init
@@ -298,56 +296,6 @@ if (isStudying) {
   timerInterval = setInterval(updateTimerDisplay, 1000);
   updateTimerDisplay();
 }
-
-// Set today as default date
-document.getElementById('manualDate').valueAsDate = new Date();
-
-document.getElementById('manualStart').addEventListener('change', updatePreview);
-document.getElementById('manualEnd').addEventListener('change', updatePreview);
-
-function updatePreview() {
-  const start = document.getElementById('manualStart').value;
-  const end   = document.getElementById('manualEnd').value;
-  const preview = document.getElementById('manualPreview');
-  if (!start || !end) { preview.textContent = ''; return; }
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let mins = (eh * 60 + em) - (sh * 60 + sm);
-  if (mins <= 0) { preview.textContent = '⚠️ Hora fim deve ser depois do início'; preview.style.color = '#ef4444'; return; }
-  preview.style.color = '#10b981';
-  preview.textContent = `✓ ${mins < 60 ? mins + ' min' : (mins/60).toFixed(1) + 'h'} de estudo`;
-}
-updatePreview();
-
-async function saveManualSession() {
-  const subject_id = document.getElementById('manualSubject').value;
-  const date       = document.getElementById('manualDate').value;
-  const start      = document.getElementById('manualStart').value;
-  const end        = document.getElementById('manualEnd').value;
-
-  if (!subject_id) { showToast('Selecione a matéria'); return; }
-  if (!date)       { showToast('Informe a data'); return; }
-  if (!start || !end) { showToast('Informe os horários'); return; }
-
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const mins = (eh * 60 + em) - (sh * 60 + sm);
-  if (mins <= 0) { showToast('Hora fim deve ser depois do início'); return; }
-
-  const start_time = `${date}T${start}:00`;
-  const end_time   = `${date}T${end}:00`;
-
-  const res  = await fetch('/api/manual-session', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ subject_id, start_time, end_time })
-  });
-  const data = await res.json();
-  if (!data.success) { showToast('Erro ao registrar'); return; }
-
-  showToast(`✓ ${data.duration_str} de estudo registrados!`);
-  loadRecentSessions();
-}
-
 loadRecentSessions();
 </script>
 {% endblock %}

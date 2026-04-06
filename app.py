@@ -103,7 +103,7 @@ def get_streak(user_id):
     sessions = StudySession.query.filter_by(user_id=user_id).order_by(StudySession.start_time.desc()).all()
     if not sessions: return {'current': 0, 'longest': 0}
     study_days = sorted(set(s.start_time.date() for s in sessions), reverse=True)
-    today = datetime.utcnow().date()
+    today = (datetime.utcnow() - timedelta(hours=3)).date()
     current = 0
     check = today
     for d in study_days:
@@ -272,8 +272,9 @@ def stop_session():
 def manual_session():
     data = request.get_json(); user_id = session['user_id']
     try:
-        start_time = datetime.fromisoformat(data['start_time'])
-        end_time   = datetime.fromisoformat(data['end_time'])
+        # Parse local time and convert to UTC (Brasília = UTC-3)
+        start_time = datetime.fromisoformat(data['start_time']) + timedelta(hours=3)
+        end_time   = datetime.fromisoformat(data['end_time']) + timedelta(hours=3)
         duration   = (end_time - start_time).total_seconds() / 60
         if duration <= 0: return jsonify({'success': False, 'error': 'Duração inválida'})
         s = StudySession(user_id=user_id, subject_id=data['subject_id'],
@@ -286,7 +287,7 @@ def manual_session():
 @app.route('/api/weekly-stats')
 @login_required
 def weekly_stats():
-    user_id = session['user_id']; today = datetime.utcnow().date()
+    user_id = session['user_id']; today = (datetime.utcnow() - timedelta(hours=3)).date()
     week_start = today - timedelta(days=today.weekday()); day_names = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
     days = {(week_start + timedelta(days=i)).isoformat(): 0.0 for i in range(7)}
     for s in StudySession.query.filter(StudySession.user_id == user_id,
@@ -307,7 +308,7 @@ def weekly_stats():
 @app.route('/api/all-weekly-stats')
 @login_required
 def all_weekly_stats():
-    today = datetime.utcnow().date(); week_start = today - timedelta(days=today.weekday())
+    today = (datetime.utcnow() - timedelta(hours=3)).date(); week_start = today - timedelta(days=today.weekday())
     day_names = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']; result = {'labels': day_names, 'datasets': []}
     for u in User.query.all():
         mins = [0.0] * 7
@@ -322,7 +323,7 @@ def all_weekly_stats():
 @app.route('/api/my-stats')
 @login_required
 def my_stats():
-    user_id = session['user_id']; today = datetime.utcnow().date()
+    user_id = session['user_id']; today = (datetime.utcnow() - timedelta(hours=3)).date()
     week_start = today - timedelta(days=today.weekday())
     today_min = sum(s.duration_minutes or 0 for s in StudySession.query.filter(
         StudySession.user_id == user_id,
@@ -337,7 +338,7 @@ def my_stats():
 @app.route('/api/user-stats/<int:uid>')
 @login_required
 def user_stats(uid):
-    today = datetime.utcnow().date(); week_start = today - timedelta(days=today.weekday())
+    today = (datetime.utcnow() - timedelta(hours=3)).date(); week_start = today - timedelta(days=today.weekday())
     day_names = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
     days = {(week_start + timedelta(days=i)).isoformat(): 0.0 for i in range(7)}
     week_sessions = StudySession.query.filter(StudySession.user_id == uid,
@@ -414,6 +415,52 @@ def get_notes():
         .order_by(StudyNote.created_at.desc()).limit(20).all()
     return jsonify({'notes': [{'id': n.id, 'content': n.content,
         'date': n.created_at.strftime('%d/%m %H:%M')} for n in notes]})
+
+
+@app.route('/api/recent-sessions-full')
+@login_required
+def recent_sessions_full():
+    sessions = (StudySession.query.filter_by(user_id=session['user_id'])
+                .order_by(StudySession.start_time.desc()).limit(15).all())
+    # Convert UTC to BRT for display
+    def to_brt(dt):
+        return dt - timedelta(hours=3) if dt else dt
+    return jsonify({'sessions': [{
+        'id': s.id,
+        'subject': s.subject.name, 'emoji': s.subject.emoji,
+        'subject_id': s.subject_id,
+        'date_str': to_brt(s.start_time).strftime('%d/%m %H:%M'),
+        'start_raw': to_brt(s.start_time).strftime('%Y-%m-%dT%H:%M:%S'),
+        'end_raw': to_brt(s.end_time).strftime('%Y-%m-%dT%H:%M:%S') if s.end_time else '',
+        'duration_str': fmt_duration(s.duration_minutes or 0)
+    } for s in sessions]})
+
+@app.route('/api/session/<int:sid>', methods=['DELETE'])
+@login_required
+def delete_session(sid):
+    s = StudySession.query.filter_by(id=sid, user_id=session['user_id']).first()
+    if not s: return jsonify({'success': False, 'error': 'Não encontrado'})
+    db.session.delete(s); db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/session/<int:sid>', methods=['PUT'])
+@login_required
+def edit_session(sid):
+    s = StudySession.query.filter_by(id=sid, user_id=session['user_id']).first()
+    if not s: return jsonify({'success': False, 'error': 'Não encontrado'})
+    data = request.get_json()
+    try:
+        start_time = datetime.fromisoformat(data['start_time']) + timedelta(hours=3)
+        end_time   = datetime.fromisoformat(data['end_time']) + timedelta(hours=3)
+        duration   = (end_time - start_time).total_seconds() / 60
+        if duration <= 0: return jsonify({'success': False, 'error': 'Duração inválida'})
+        s.start_time = start_time; s.end_time = end_time
+        s.duration_minutes = duration
+        if data.get('subject_id'): s.subject_id = data['subject_id']
+        db.session.commit()
+        return jsonify({'success': True, 'duration_str': fmt_duration(duration)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/recent-sessions')
 @login_required
